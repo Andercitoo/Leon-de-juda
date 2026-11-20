@@ -1,7 +1,8 @@
 const pool = require('../config/db');
 
 const crearPedido = async (req, res) => {
-    const { id_usuario, repuestos, modalidad_entrega } = req.body;
+    const id_usuario = req.body.id_usuario || req.user?.id_usuario;
+    const { repuestos, modalidad_entrega } = req.body;
 
     try {
         await pool.query('BEGIN');
@@ -26,7 +27,7 @@ const crearPedido = async (req, res) => {
 
         const queryPedido = `
             INSERT INTO pedido (id_usuario, modalidad_entrega, costo_envio, total_pagar, estado_pedido, expira_reserva)
-            VALUES ($1, $2, $3, $4, 'Pendiente', NOW() + INTERVAL '15 minutes') RETURNING id_pedido, expira_reserva
+            VALUES ($1, $2, $3, $4, 'Pendiente', NOW() + INTERVAL '15 minutes') RETURNING *
         `;
         const resultPedido = await pool.query(queryPedido, [id_usuario, modalidad_final, costo_envio, total_pagar]);
         const nuevoPedido = resultPedido.rows[0];

@@ -83,8 +83,10 @@ exports.login = async (req, res) => {
         id_usuario: usuario.id_usuario,
         nombre: usuario.nombre,
         dni: usuario.dni,
-        placa: usuario.placa_vehiculo,
-        modelo_moto: usuario.modelo_moto
+        telefono: usuario.telefono || '',
+        placa_vehiculo: usuario.placa_vehiculo,
+        modelo_moto: usuario.modelo_moto || 'Sin especificar',
+        soat_vigente: usuario.soat_vigente ?? true
       }
     });
   } catch (error) {
