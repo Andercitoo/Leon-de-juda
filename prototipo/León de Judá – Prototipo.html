@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>León de Judá – App del conductor</title>
+<style>
+:root{--bg:#f4f1ea;--card:#fff;--tx:#1d1a14;--mut:#6f6a5e;--br:#e3ddcf;--pri:#f5a623;--ptx:#1a1200;--ok:#1e8e4e;--err:#d23b3b;--soft:#fdf3dc;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#14120e;--card:#201d17;--tx:#f3efe4;--mut:#a39d8d;--br:#35302450;--br:#383225;--soft:#2e2713;--ok:#4cc17c;--err:#ff7b7b;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#14120e;--card:#201d17;--tx:#f3efe4;--mut:#a39d8d;--br:#383225;--soft:#2e2713;--ok:#4cc17c;--err:#ff7b7b;color-scheme:dark}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.app{max-width:430px;margin:0 auto;min-height:100vh;padding:14px 14px 90px}
+h1{font-size:20px;margin:0 0 4px}h2{font-size:17px;margin:16px 0 8px}
+.mut{color:var(--mut);font-size:13px}
+.card{background:var(--card);border:1px solid var(--br);border-radius:14px;padding:12px;margin-bottom:10px}
+.row{display:flex;gap:8px;align-items:center}.sp{justify-content:space-between}.grow{flex:1}
+input,select,textarea{width:100%;padding:11px;border-radius:10px;border:1px solid var(--br);background:var(--bg);color:var(--tx);font:inherit;margin:4px 0}
+label{font-size:13px;color:var(--mut)}
+.btn{border:0;border-radius:12px;padding:13px;font:inherit;font-weight:700;background:var(--pri);color:var(--ptx);width:100%;cursor:pointer}
+.btn.sec{background:var(--card);color:var(--tx);border:1px solid var(--br)}
+.btn.red{background:#d23b3b;color:#fff}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn.sm{padding:8px 12px;width:auto;font-size:13px}
+.big{padding:22px 10px;font-size:16px;text-align:center}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.chip{padding:6px 12px;border-radius:99px;border:1px solid var(--br);background:var(--card);font-size:13px;cursor:pointer;white-space:nowrap;color:var(--tx)}
+.chip.on{background:var(--pri);color:var(--ptx);border-color:var(--pri);font-weight:700}
+.chips{display:flex;gap:6px;overflow-x:auto;padding:4px 0}
+.err{color:var(--err);font-size:13px;margin:2px 0}.okc{color:var(--ok)}
+.badge{font-size:12px;padding:2px 8px;border-radius:99px;background:var(--soft)}
+.price{font-weight:800;font-size:17px}
+nav{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:min(430px,100%);display:flex;background:var(--card);border-top:1px solid var(--br);padding:6px 4px calc(6px + env(safe-area-inset-bottom,0px))}
+nav button{flex:1;background:none;border:0;color:var(--mut);font:inherit;font-size:11px;padding:4px;cursor:pointer;position:relative}
+nav button.on{color:var(--tx);font-weight:700}nav button i{display:block;font-style:normal;font-size:20px}
+nav .dot{position:absolute;top:0;right:22%;background:var(--err);color:#fff;border-radius:99px;font-size:10px;padding:0 5px}
+.toast{position:fixed;left:50%;bottom:84px;transform:translateX(-50%);background:var(--tx);color:var(--bg);padding:10px 16px;border-radius:12px;font-size:14px;max-width:90%;z-index:9}
+.steps{display:flex;gap:4px;margin:8px 0}.steps div{flex:1;text-align:center;font-size:12px;padding:6px 2px;border-radius:8px;background:var(--bg);color:var(--mut)}.steps .on{background:var(--pri);color:var(--ptx);font-weight:700}
+svg text{font:11px system-ui}
+.tabs{display:flex;margin-bottom:10px}.tabs button{flex:1;padding:10px;border:0;border-bottom:3px solid var(--br);background:none;color:var(--mut);font:inherit;font-weight:700}.tabs .on{border-color:var(--pri);color:var(--tx)}
+.chk{display:flex;gap:8px;align-items:flex-start;font-size:14px;color:var(--tx);margin:8px 0}.chk input{width:auto;margin-top:3px}
+.timer{background:var(--soft);border-radius:10px;padding:8px 10px;font-size:13px;margin-bottom:10px}
+</style>
+</head>
+<body>
+<div class="app" id="app"></div>
+<nav id="nav" hidden></nav>
+<div id="toast"></div>
+<script>
+// ===== Constantes (docs: Tabla 13 y reglas de negocio) =====
+const TALLER={lat:-12.215840,lon:-76.931420},RADIO=3.5,MIN_ENVIO=30,COSTO_ENVIO=6,BLOQUEO_MIN=15;
+const PX_KM=25,CX=150,CY=120; // escala del mapa simulado
+const P=[
+{id:1,n:"Pastillas de freno delanteras",m:"Bajaj",mod:"RE 4S",c:"Frenos",p:28,s:12},
+{id:2,n:"Zapatas de freno posteriores",m:"TVS",mod:"King",c:"Frenos",p:22,s:8},
+{id:3,n:"Bujía NGK",m:"Bajaj",mod:"RE 4S",c:"Motor",p:12,s:30},
+{id:4,n:"Kit de pistón y anillos",m:"TVS",mod:"King",c:"Motor",p:95,s:3},
+{id:5,n:"Filtro de aire",m:"Bajaj",mod:"RE 4S",c:"Motor",p:18,s:1},
+{id:6,n:"Cadena de transmisión",m:"TVS",mod:"King",c:"Transmisión",p:45,s:6},
+{id:7,n:"Disco de embrague",m:"Bajaj",mod:"RE 4S",c:"Transmisión",p:62,s:0},
+{id:8,n:"Cable de acelerador",m:"TVS",mod:"King",c:"Transmisión",p:15,s:14},
+{id:9,n:"Batería 12V 7Ah",m:"Bajaj",mod:"RE 4S",c:"Eléctrico",p:120,s:4},
+{id:10,n:"Faro delantero LED",m:"TVS",mod:"King",c:"Eléctrico",p:48,s:5},
+{id:11,n:"Amortiguador posterior",m:"Bajaj",mod:"RE 4S",c:"Suspensión",p:85,s:2},
+{id:12,n:"Aceite 20W-50 (1 L)",m:"TVS",mod:"King",c:"Motor",p:26,s:25}
+].map(x=>({...x,b:0}));
+const CATS=["Todas","Frenos","Motor","Transmisión","Eléctrico","Suspensión"];
+
+// ===== Estado =====
+let users=[],user=null,view="login",authTab="login",cart={},expiry=null,orders=[],aux=null,gps=true,pos={x:CX+60,y:CY-40},modo="TIENDA",acepta=false,auxMsg=null;
+let f={q:"",m:"Todas",c:"Todas"};
+try{users=JSON.parse(localStorage.getItem("ldj_users")||"[]")}catch(e){}
+const $=s=>document.querySelector(s);
+const money=n=>"S/ "+n.toFixed(2);
+function toast(t){const e=$("#toast");e.innerHTML='<div class="toast">'+t+'</div>';setTimeout(()=>e.innerHTML="",2800)}
+function hav(a,b,c,d){const r=x=>x*Math.PI/180,R=6371,dp=r(c-a),dl=r(d-b);
+ return 2*R*Math.asin(Math.sqrt(Math.sin(dp/2)**2+Math.cos(r(a))*Math.cos(r(c))*Math.sin(dl/2)**2))}
+function coords(){const dx=(pos.x-CX)/PX_KM,dy=(CY-pos.y)/PX_KM;
+ return{lat:TALLER.lat+dy/111.32,lon:TALLER.lon+dx/(111.32*Math.cos(TALLER.lat*Math.PI/180))}}
+function dist(){const c=coords();return hav(TALLER.lat,TALLER.lon,c.lat,c.lon)}
+const cartItems=()=>Object.keys(cart).map(id=>({p:P.find(x=>x.id==id),q:cart[id]}));
+const subtotal=()=>cartItems().reduce((a,i)=>a+i.p.p*i.q,0);
+const nCart=()=>Object.values(cart).reduce((a,b)=>a+b,0);
+const auxActivo=()=>aux&&aux.estado!=="Finalizado";
+function go(v){view=v;render()}
+
+// ===== Render =====
+function render(){
+ const nav=$("#nav");
+ if(!user){nav.hidden=true;$("#app").innerHTML=authView();return}
+ nav.hidden=false;
+ const items=[["home","🏠","Inicio"],["cat","🔧","Catálogo"],["aux","🚨","Auxilio"],["cart","🛒","Carrito"],["me","👤","Perfil"]];
+ nav.innerHTML=items.map(i=>`<button class="${view==i[0]?"on":""}" onclick="go('${i[0]}')"><i>${i[1]}</i>${i[2]}${i[0]=="cart"&&nCart()?`<span class="dot">${nCart()}</span>`:""}</button>`).join("");
+ $("#app").innerHTML=({home:homeView,cat:catView,aux:auxView,cart:cartView,me:meView})[view]();
+ if(view=="cat")list();
+}
+function authView(){
+ const reg=authTab=="reg";
+ return `<h1>🦁 León de Judá</h1><p class="mut">Repuestos y auxilio mecánico para tu mototaxi</p>
+ <div class="tabs"><button class="${!reg?"on":""}" onclick="authTab='login';render()">Ingresar</button><button class="${reg?"on":""}" onclick="authTab='reg';render()">Registrarme</button></div>
+ <div class="card">${reg?`
+ <label>Nombre completo</label><input id="rn" placeholder="Juan Pérez">
+ <label>DNI (8 dígitos)</label><input id="rd" inputmode="numeric" maxlength="8">
+ <label>Contraseña</label><input id="rp" type="password">
+ <h2>Datos del vehículo</h2>
+ <label>Placa (6 caracteres)</label><input id="rpl" maxlength="6" style="text-transform:uppercase">
+ <div class="grid2"><div><label>Marca</label><select id="rm"><option>Bajaj</option><option>TVS</option></select></div><div><label>Modelo</label><input id="rmo" placeholder="RE 4S"></div></div>
+ <label class="chk"><input type="checkbox" id="rs"> <span>Mi SOAT está vigente</span></label>
+ <div id="rerr"></div>
+ <button class="btn" onclick="registrar()">Crear cuenta</button>
+ <button class="btn sec" style="margin-top:8px" onclick="demo()">Cargar datos de ejemplo</button>`:`
+ <label>DNI</label><input id="ld" inputmode="numeric" maxlength="8">
+ <label>Contraseña</label><input id="lp" type="password">
+ <div id="lerr"></div>
+ <button class="btn" onclick="login()">Ingresar</button>`}</div>`;
+}
+function demo(){$("#rn").value="Juan Pérez Quispe";$("#rd").value="70123456";$("#rp").value="1234";$("#rpl").value="ABC123";$("#rmo").value="RE 4S";$("#rs").checked=true}
+function registrar(){
+ const v=id=>$("#"+id).value.trim(),e=[];
+ const d=v("rd"),pl=v("rpl").toUpperCase();
+ if(!v("rn"))e.push("Ingresa tu nombre.");
+ if(!/^[0-9]{8}$/.test(d))e.push("RN-S01: el DNI debe tener 8 dígitos.");
+ if(!/^[A-Z0-9]{6}$/.test(pl))e.push("RN-S01: la placa debe tener 6 caracteres alfanuméricos.");
+ if(!$("#rs").checked)e.push("RN-S01: solo pueden operar conductores con SOAT vigente.");
+ if(!v("rp"))e.push("Crea una contraseña.");
+ if(!v("rmo"))e.push("Ingresa el modelo de tu vehículo.");
+ if(users.some(u=>u.dni==d))e.push("Ese DNI ya está registrado.");
+ if(e.length){$("#rerr").innerHTML=e.map(x=>`<div class="err">• ${x}</div>`).join("");return}
+ const u={nombre:v("rn"),dni:d,pass:v("rp"),placa:pl,marca:v("rm"),modelo:v("rmo"),soat:true};
+ users.push(u);try{localStorage.setItem("ldj_users",JSON.stringify(users))}catch(x){}
+ user=u;view="home";render();toast("Registro validado ✔ (201 Created)");
+}
+function login(){
+ const u=users.find(x=>x.dni==$("#ld").value.trim()&&x.pass==$("#lp").value);
+ if(!u){$("#lerr").innerHTML='<div class="err">DNI o contraseña incorrectos. ¿Aún no te registraste?</div>';return}
+ user=u;view="home";render();
+}
+function homeView(){
+ return `<h1>Hola, ${user.nombre.split(" ")[0]} 👋</h1>
+ <div class="card row sp"><div><b>${user.marca} ${user.modelo}</b><div class="mut">Placa ${user.placa}</div></div><span class="badge okc">SOAT vigente ✔</span></div>
+ <div class="grid2"><button class="btn big" onclick="go('cat')">🔧<br>Comprar repuesto</button><button class="btn big red" onclick="go('aux')">🚨<br>Pedir auxilio</button></div>
+ ${auxActivo()?`<h2>Auxilio en curso</h2>${auxCard()}`:""}
+ ${nCart()?`<div class="card row sp" style="margin-top:10px"><span>🛒 ${nCart()} repuesto(s) reservados</span><button class="btn sm" onclick="go('cart')">Ver carrito</button></div>`:""}
+ <p class="mut">Taller: Av. Sáenz Peña, Villa El Salvador · Cobertura de ${RADIO} km</p>`;
+}
+// ----- Catálogo -----
+function catView(){
+ return `<h1>Catálogo</h1>
+ <input placeholder="Buscar repuesto…" value="${f.q}" oninput="f.q=this.value;list()">
+ <div class="chips">${["Todas","Bajaj","TVS"].map(m=>`<span class="chip ${f.m==m?"on":""}" onclick="f.m='${m}';render()">${m}</span>`).join("")}</div>
+ <div class="chips">${CATS.map(c=>`<span class="chip ${f.c==c?"on":""}" onclick="f.c='${c}';render()">${c}</span>`).join("")}</div>
+ <div id="list"></div>`;
+}
+function list(){
+ const r=P.filter(p=>(f.m=="Todas"||p.m==f.m)&&(f.c=="Todas"||p.c==f.c)&&p.n.toLowerCase().includes(f.q.toLowerCase()));
+ $("#list").innerHTML=r.length?r.map(p=>`<div class="card"><div class="row sp"><b>${p.n}</b><span class="price">${money(p.p)}</span></div>
+ <div class="mut">${p.m} ${p.mod} · ${p.c}</div>
+ <div class="row sp" style="margin-top:8px"><span class="badge ${p.s?"":"err"}">${p.s?(p.s<=3?"Últimas "+p.s+" unidades":"Stock: "+p.s):"Agotado"}</span>
+ <button class="btn sm" ${p.s?"":"disabled"} onclick="add(${p.id})">Agregar</button></div></div>`).join(""):'<p class="mut">Sin resultados.</p>';
+}
+function add(id){const p=P.find(x=>x.id==id);if(p.s<1)return toast("Sin stock (409 Conflict)");
+ p.s--;p.b++;cart[id]=(cart[id]||0)+1;expiry=Date.now()+BLOQUEO_MIN*60000;
+ toast("Stock reservado por "+BLOQUEO_MIN+" min (RN-V01)");render()}
+function chg(id,d){const p=P.find(x=>x.id==id);
+ if(d>0){if(p.s<1)return toast("No hay más stock");p.s--;p.b++;cart[id]++}
+ else{p.s++;p.b--;cart[id]--;if(!cart[id])delete cart[id]}
+ if(!nCart())expiry=null;render()}
+function liberar(){Object.keys(cart).forEach(id=>{const p=P.find(x=>x.id==id);p.s+=cart[id];p.b-=cart[id]});cart={};expiry=null}
+setInterval(()=>{if(!expiry)return;const l=expiry-Date.now();
+ if(l<=0){liberar();toast("⏱ Reserva expirada: stock liberado");render();return}
+ const t=$("#tmr");if(t)t.textContent=String(Math.floor(l/60000)).padStart(2,"0")+":"+String(Math.floor(l%60000/1000)).padStart(2,"0")},1000);
+// ----- Carrito -----
+function cartView(){
+ const it=cartItems(),st=subtotal();
+ if(!it.length)return `<h1>Carrito</h1><div class="card mut">Tu carrito está vacío. Ve al catálogo para reservar repuestos.</div><button class="btn" onclick="go('cat')">Ir al catálogo</button>`;
+ const domOk=st>=MIN_ENVIO;if(!domOk&&modo=="DOMICILIO")modo="TIENDA";
+ const env=modo=="DOMICILIO"?COSTO_ENVIO:0,tot=st+env;
+ return `<h1>Carrito</h1><div class="timer">⏱ Stock reservado: <b id="tmr">15:00</b> (RN-V01)</div>
+ ${it.map(i=>`<div class="card row sp"><div class="grow"><b>${i.p.n}</b><div class="mut">${money(i.p.p)} c/u</div></div>
+ <div class="row"><button class="btn sm sec" onclick="chg(${i.p.id},-1)">−</button><b>${i.q}</b><button class="btn sm sec" onclick="chg(${i.p.id},1)">+</button></div></div>`).join("")}
+ <h2>Modalidad</h2>
+ <div class="grid2"><button class="btn ${modo=="TIENDA"?"":"sec"}" onclick="modo='TIENDA';render()">🏪 Recojo en tienda</button>
+ <button class="btn ${modo=="DOMICILIO"?"":"sec"}" ${domOk?"":"disabled"} onclick="modo='DOMICILIO';render()">🛵 Envío a domicilio</button></div>
+ ${domOk?"":`<div class="err">RN-P01: el envío aplica desde ${money(MIN_ENVIO)}; tu pedido pasa a recojo en tienda.</div>`}
+ <div class="card" style="margin-top:10px"><div class="row sp"><span>Subtotal</span><span>${money(st)}</span></div>
+ <div class="row sp"><span>Envío</span><span>${money(env)}</span></div><hr style="border:0;border-top:1px solid var(--br)">
+ <div class="row sp"><b>Total</b><span class="price">${money(tot)}</span></div></div>
+ <label class="chk"><input type="checkbox" ${acepta?"checked":""} onchange="acepta=this.checked;render()"> <span>Acepto el desglose de costos (RN-V02)</span></label>
+ <button class="btn" ${acepta?"":"disabled"} onclick="confirmar(${tot})">Confirmar pedido</button>`;
+}
+function confirmar(t){
+ const items=cartItems().map(i=>i.q+"× "+i.p.n);
+ cartItems().forEach(i=>i.p.b-=i.q);cart={};expiry=null;acepta=false;
+ orders.unshift({n:"PED-"+String(orders.length+1).padStart(4,"0"),items,t,modo,h:new Date().toLocaleTimeString("es-PE",{hour:"2-digit",minute:"2-digit"})});
+ toast("Pedido confirmado ✔ (201 Created)");go("me");
+}
+// ----- Auxilio -----
+function auxCard(){
+ const E=["Pendiente","En camino","Finalizado"],i=E.indexOf(aux.estado);
+ return `<div class="card"><b>Auxilio #${aux.id}</b> · <span class="mut">${aux.motivo}</span>
+ <div class="steps">${E.map((e,k)=>`<div class="${k<=i?"on":""}">${e}</div>`).join("")}</div>
+ <div class="mut">A ${aux.d.toFixed(2)} km del taller · llegada estimada ${Math.max(1,Math.round(aux.d/15*60))} min</div>
+ ${aux.estado!="Finalizado"?`<button class="btn sm sec" style="margin-top:8px" onclick="avanzar()">Simular avance del mecánico (PATCH)</button>`:""}</div>`;
+}
+function avanzar(){const E=["Pendiente","En camino","Finalizado"];aux.estado=E[E.indexOf(aux.estado)+1];
+ if(aux.estado=="Finalizado")toast("Auxilio finalizado: técnico disponible");render()}
+function auxView(){
+ const d=dist(),ok=d<=RADIO;
+ return `<h1>Pedir auxilio mecánico</h1>
+ ${auxActivo()?auxCard():""}
+ <div class="card row sp"><span>📡 GPS del dispositivo</span><button class="btn sm ${gps?"":"sec"}" onclick="gps=!gps;render()">${gps?"Activo":"Desactivado"}</button></div>
+ <p class="mut" style="margin:6px 2px">Toca el mapa para ajustar tu ubicación.</p>
+ <svg id="map" viewBox="0 0 300 240" style="width:100%;border-radius:14px;border:1px solid var(--br);background:var(--card);touch-action:manipulation" onclick="mapClick(event)">
+ <path d="M0 60 L300 170 M120 0 L190 240 M0 200 L300 90" stroke="var(--br)" stroke-width="8" fill="none"/>
+ <circle cx="${CX}" cy="${CY}" r="${RADIO*PX_KM}" fill="${ok?"#f5a62322":"#d23b3b18"}" stroke="#f5a623" stroke-width="2" stroke-dasharray="6 4"/>
+ <rect x="${CX-9}" y="${CY-9}" width="18" height="18" rx="4" fill="#f5a623"/><text x="${CX}" y="${CY+4}" text-anchor="middle" fill="#1a1200" font-weight="700">T</text>
+ <text x="${CX}" y="${CY+24}" text-anchor="middle" fill="var(--tx)">Taller</text>
+ <line x1="${CX}" y1="${CY}" x2="${pos.x}" y2="${pos.y}" stroke="${ok?"#1e8e4e":"#d23b3b"}" stroke-width="2" stroke-dasharray="3 3"/>
+ <circle cx="${pos.x}" cy="${pos.y}" r="8" fill="${ok?"#1e8e4e":"#d23b3b"}" stroke="#fff" stroke-width="2"/>
+ <text x="8" y="232" fill="var(--mut)">Radio máx. ${RADIO} km</text></svg>
+ <div class="row sp" style="margin:8px 0"><b>Distancia (Haversine): ${d.toFixed(2)} km</b><span class="badge ${ok?"okc":"err"}">${ok?"Dentro de cobertura":"Fuera de cobertura"}</span></div>
+ <div class="row" style="margin-bottom:8px"><button class="btn sm sec" onclick="pos={x:CX-50,y:CY};render()">Simular a 2 km</button><button class="btn sm sec" onclick="pos={x:CX+130,y:CY};render()">Simular a 5.2 km</button></div>
+ <label>¿Qué le pasó a tu vehículo?</label>
+ <select id="motivo"><option>No enciende</option><option>Llanta ponchada</option><option>Falla de frenos</option><option>Se recalentó</option><option>Otro problema</option></select>
+ <button class="btn red" style="margin-top:8px" onclick="pedirAux()">🚨 Solicitar auxilio</button>
+ ${auxMsg?`<div class="card" style="margin-top:10px;border-color:${auxMsg.ok?"var(--ok)":"var(--err)"}"><b>${auxMsg.code}</b><div>${auxMsg.t}</div></div>`:""}`;
+}
+function mapClick(e){const r=$("#map").getBoundingClientRect();
+ pos={x:(e.clientX-r.left)/r.width*300,y:(e.clientY-r.top)/r.height*240};render()}
+function pedirAux(){
+ const m=$("#motivo").value,c=coords(),d=dist();
+ if(!gps)auxMsg={code:"400 Bad Request",t:"RN-R02: activa tu ubicación GPS para pedir auxilio.",ok:0};
+ else if(d>RADIO)auxMsg={code:"422 Unprocessable",t:`RN-R01: estás a ${d.toFixed(2)} km; la cobertura máxima es ${RADIO} km.`,ok:0};
+ else if(auxActivo())auxMsg={code:"409 Conflict",t:"RN-R03: el técnico único ya se encuentra en ruta. Intenta cuando finalice.",ok:0};
+ else{aux={id:Math.floor(Math.random()*900)+100,estado:"Pendiente",d,motivo:m,lat:c.lat,lon:c.lon};
+  auxMsg={code:"201 Created",t:"Auxilio registrado y asignado al mecánico de turno.",ok:1}}
+ render();
+}
+// ----- Perfil -----
+function meView(){
+ return `<h1>Mi perfil</h1><div class="card"><b>${user.nombre}</b><div class="mut">DNI ${user.dni}</div>
+ <div style="margin-top:6px">${user.marca} ${user.modelo} · Placa ${user.placa} · SOAT vigente ✔</div></div>
+ <h2>Mis pedidos</h2>${orders.length?orders.map(o=>`<div class="card"><div class="row sp"><b>${o.n}</b><span class="mut">${o.h}</span></div>
+ <div class="mut">${o.items.join(", ")}</div><div class="row sp"><span class="badge">${o.modo=="TIENDA"?"Recojo en tienda":"Envío a domicilio"}</span><b>${money(o.t)}</b></div></div>`).join(""):'<div class="card mut">Aún no tienes pedidos.</div>'}
+ <button class="btn sec" onclick="liberar();user=null;aux=null;auxMsg=null;render()">Cerrar sesión</button>`;
+}
+render();
+</script>
+</body>
+</html>
