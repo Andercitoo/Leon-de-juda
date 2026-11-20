@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
+import 'home_screen.dart';
 
 class AuthScreen extends StatefulWidget {
   const AuthScreen({super.key});
@@ -13,11 +14,9 @@ class _AuthScreenState extends State<AuthScreen> with SingleTickerProviderStateM
   final _loginFormKey = GlobalKey<FormState>();
   final _registerFormKey = GlobalKey<FormState>();
 
-  // Controladores Login
   final _loginEmailController = TextEditingController();
   final _loginPasswordController = TextEditingController();
 
-  // Controladores Registro
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
   final _dniController = TextEditingController();
@@ -107,8 +106,9 @@ class _AuthScreenState extends State<AuthScreen> with SingleTickerProviderStateM
             ElevatedButton(
               onPressed: () {
                 if (_loginFormKey.currentState!.validate()) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Procesando inicio de sesión...')),
+                  Navigator.pushReplacement(
+                    context,
+                    MaterialPageRoute(builder: (context) => const HomeScreen()),
                   );
                 }
               },
@@ -151,7 +151,6 @@ class _AuthScreenState extends State<AuthScreen> with SingleTickerProviderStateM
                   : null,
             ),
             const SizedBox(height: 14),
-            // Validación RN-S01: DNI 8 dígitos
             TextFormField(
               controller: _dniController,
               keyboardType: TextInputType.number,
@@ -169,7 +168,6 @@ class _AuthScreenState extends State<AuthScreen> with SingleTickerProviderStateM
               },
             ),
             const SizedBox(height: 14),
-            // Validación RN-S01: Placa 6 caracteres alfanuméricos
             TextFormField(
               controller: _placaController,
               textCapitalization: TextCapitalization.characters,
@@ -204,8 +202,9 @@ class _AuthScreenState extends State<AuthScreen> with SingleTickerProviderStateM
             ElevatedButton(
               onPressed: () {
                 if (_registerFormKey.currentState!.validate()) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Registrando usuario...')),
+                  Navigator.pushReplacement(
+                    context,
+                    MaterialPageRoute(builder: (context) => const HomeScreen()),
                   );
                 }
               },
