@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
+import 'catalogo_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -61,12 +62,13 @@ class HomeScreen extends StatelessWidget {
                 Expanded(
                   child: _buildServiceCard(
                     context,
-                    icon: Icons.map_outlined,
-                    title: 'Ver Rutas',
+                    icon: Icons.build_outlined,
+                    title: 'Comprar repuesto',
                     color: AppTheme.primaryAmber,
                     onTap: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Módulo de mapa y rutas en desarrollo')),
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const CatalogoScreen()),
                       );
                     },
                   ),

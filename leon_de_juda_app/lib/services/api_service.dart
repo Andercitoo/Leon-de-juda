@@ -6,7 +6,12 @@ import '../models/pedido.dart';
 import '../models/auxilio.dart';
 
 class ApiService {
-  static const String baseUrl = 'http://10.0.2.2:3000/api';
+  // Emulador Android -> 10.0.2.2 (localhost de la PC). Para web/escritorio:
+  // flutter run --dart-define=API_URL=http://localhost:3000/api
+  static const String baseUrl = String.fromEnvironment(
+    'API_URL',
+    defaultValue: 'http://10.0.2.2:3000/api',
+  );
 
   static String? _token;
   static Usuario? usuarioActual;
@@ -90,27 +95,42 @@ class ApiService {
     }
   }
 
-  // POST /api/pedidos
+  // POST /api/pedidos  (reserva atómica de stock por 15 min - RN-V01)
   // Cada item de repuestos debe tener: {'id_repuesto': int, 'cantidad': int, 'precio': double}
+  // Lanza ApiException con statusCode (400, 401, 403, 404, 409, 500) si falla.
   static Future<Pedido> crearPedido({
     required String modalidadEntrega, // 'Delivery' o 'Recojo en tienda'
-    required List> repuestos,
+    required List<Map<String, dynamic>> repuestos,
   }) async {
-    final response = await http.post(
-      Uri.parse('$baseUrl/pedidos'),
-      headers: _headers(auth: true),
-      body: jsonEncode({
-        'id_usuario': usuarioActual?.idUsuario,
-        'modalidad_entrega': modalidadEntrega,
-        'repuestos': repuestos,
-      }),
-    );
+    late final http.Response response;
+    try {
+      response = await http
+          .post(
+            Uri.parse('$baseUrl/pedidos'),
+            headers: _headers(auth: true),
+            body: jsonEncode({
+              'id_usuario': usuarioActual?.idUsuario,
+              'modalidad_entrega': modalidadEntrega,
+              'repuestos': repuestos,
+            }),
+          )
+          .timeout(const Duration(seconds: 10));
+    } catch (_) {
+      throw ApiException(0, 'No se pudo conectar con el servidor ($baseUrl).');
+    }
 
-    final data = jsonDecode(response.body);
+    Map<String, dynamic> data = {};
+    try {
+      data = jsonDecode(response.body) as Map<String, dynamic>;
+    } catch (_) {}
+
     if (response.statusCode == 201 || response.statusCode == 200) {
       return Pedido.fromJson(data['pedido'] ?? data);
     } else {
-      throw Exception(data['error'] ?? 'Error al generar pedido (${response.statusCode})');
+      throw ApiException(
+        response.statusCode,
+        data['error']?.toString() ?? 'Error al generar pedido (${response.statusCode})',
+      );
     }
   }
 
@@ -156,4 +176,15 @@ class ApiService {
       throw Exception(data['error'] ?? 'Error al actualizar auxilio');
     }
   }
+}
+
+/// Error HTTP con su código de estado (0 = sin conexión).
+class ApiException implements Exception {
+  final int statusCode;
+  final String mensaje;
+
+  ApiException(this.statusCode, this.mensaje);
+
+  @override
+  String toString() => mensaje;
 }
