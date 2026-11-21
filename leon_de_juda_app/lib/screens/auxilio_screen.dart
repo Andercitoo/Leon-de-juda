@@ -13,10 +13,6 @@ import '../services/auxilio_respuesta.dart';
 import '../theme/app_theme.dart';
 import '../utils/auxilio_geo.dart';
 
-/// `auxView` del prototipo HTML.
-///
-/// Mapa real de OpenStreetMap + GPS con geolocator + POST/PATCH a la API
-/// del equipo (`ApiService.baseUrl = http://10.0.2.2:3000/api`).
 class AuxilioScreen extends StatefulWidget {
   const AuxilioScreen({super.key});
 
@@ -39,6 +35,7 @@ class _AuxilioScreenState extends State<AuxilioScreen> {
     AuxilioConfig.tallerLat + 0.010,
     AuxilioConfig.tallerLon + 0.012,
   );
+  double _zoomActual = 14.5;
   bool _gpsActive = true;
   bool _locating = false;
   bool _modoSimulacion = false;
@@ -73,7 +70,7 @@ class _AuxilioScreenState extends State<AuxilioScreen> {
 
   static int _indiceEstado(String estado) {
     final index = AuxilioConfig.estados.indexOf(estado);
-    return index < 0 ? 0 : index; // 'SOLICITADO' u otro valor → Pendiente
+    return index < 0 ? 0 : index;
   }
 
   // ------------------------------------------------------------------ GPS
@@ -164,24 +161,29 @@ class _AuxilioScreenState extends State<AuxilioScreen> {
     });
   }
 
-  void _arrastrarRider(MapCamera camera, Offset delta) {
-    final actual = camera.latLngToScreenOffset(_rider);
-    _moverRider(camera.screenOffsetToLatLng(actual + delta));
+  void _ajustarZoom(double delta) {
+    final nuevoZoom = (_zoomActual + delta).clamp(11.0, 18.0);
+    if (nuevoZoom == _zoomActual) return;
+    final centro = _mapController.camera.center;
+    setState(() => _zoomActual = nuevoZoom);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _mapController.move(centro, nuevoZoom);
+    });
   }
 
-  void _simular(double km) {
-    final punto = puntoDestino(
-      origen: _taller,
-      distanciaKm: km,
-      rumboGrados: 90,
+  void _moverCentroMapa({double dLat = 0, double dLon = 0}) {
+    final centroActual = _mapController.camera.center;
+    final nuevoCentro = LatLng(
+      centroActual.latitude + dLat,
+      centroActual.longitude + dLon,
     );
-    _moverRider(punto);
-    _mapController.move(punto, 15.5);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _mapController.move(nuevoCentro, _zoomActual);
+    });
   }
 
   // --------------------------------------------------------- API REST
   Future<void> _solicitarAuxilio() async {
-    // RN-R02: bloqueo del envío con GPS apagado.
     if (!_gpsActive) {
       setState(() => _respuesta = AuxilioRespuesta.gpsApagado());
       return;
@@ -264,10 +266,10 @@ class _AuxilioScreenState extends State<AuxilioScreen> {
               _tarjetaGps(),
               const SizedBox(height: 12),
               _tarjetaMapa(),
+              const SizedBox(height: 8),
+              _botonesZoomYMovimiento(),
               const SizedBox(height: 12),
               _filaDistancia(),
-              const SizedBox(height: 8),
-              _botonesSimulacion(),
               const SizedBox(height: 16),
               _formulario(),
               const SizedBox(height: 12),
@@ -312,57 +314,55 @@ class _AuxilioScreenState extends State<AuxilioScreen> {
         children: <Widget>[
           SizedBox(
             height: 290,
-            child: FlutterMap(
-              mapController: _mapController,
-              options: MapOptions(
-                initialCenter: _taller,
-                initialZoom: 14.8,
-                minZoom: 11,
-                maxZoom: 19,
-                onTap: (tapPosition, punto) => _moverRider(punto),
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTapUp: (details) {
+                if (_submitting || _advancing) return;
+                final punto = _mapController.camera.screenOffsetToLatLng(
+                  details.localPosition,
+                );
+                _moverRider(punto);
+              },
+              child: IgnorePointer(
+                child: FlutterMap(
+                  key: const ValueKey('mapa_auxilio_fijo'),
+                  mapController: _mapController,
+                  options: const MapOptions(
+                    initialCenter: _taller,
+                    initialZoom: 14.5,
+                    minZoom: 11,
+                    maxZoom: 18,
+                  ),
+                  children: <Widget>[
+                    TileLayer(
+                      urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                      userAgentPackageName: 'com.leondejuda.app',
+                      maxNativeZoom: 19,
+                    ),
+                    PolylineLayer(
+                      polylines: <Polyline>[
+                        Polyline(
+                          points: <LatLng>[_taller, _rider],
+                          color: _enCobertura
+                              ? AppTheme.confirmGreen
+                              : AppTheme.alertRed,
+                          strokeWidth: 2.5,
+                        ),
+                      ],
+                    ),
+                    MarkerLayer(
+                      markers: <Marker>[_marcadorTaller(), _marcadorRider()],
+                    ),
+                  ],
+                ),
               ),
-              children: <Widget>[
-                TileLayer(
-                  urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                  userAgentPackageName: 'com.leondejuda.app',
-                  maxNativeZoom: 19,
-                ),
-                CircleLayer(
-                  circles: <CircleMarker>[
-                    CircleMarker(
-                      point: _taller,
-                      radius: AuxilioConfig.radioKm * 1000,
-                      useRadiusInMeter: true,
-                      color: _enCobertura
-                          ? const Color(0x2EF5A623)
-                          : const Color(0x1FD23B3B),
-                      borderColor: AppTheme.primaryAmber,
-                      borderStrokeWidth: 2,
-                    ),
-                  ],
-                ),
-                PolylineLayer(
-                  polylines: <Polyline>[
-                    Polyline(
-                      points: <LatLng>[_taller, _rider],
-                      color: _enCobertura
-                          ? AppTheme.confirmGreen
-                          : AppTheme.alertRed,
-                      strokeWidth: 2,
-                    ),
-                  ],
-                ),
-                MarkerLayer(
-                  markers: <Marker>[_marcadorTaller(), _marcadorRider()],
-                ),
-              ],
             ),
           ),
           Container(
             color: Colors.black54,
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             child: const Text(
-              'Toca el mapa o arrastra el marcador 🛵 · © OpenStreetMap contributors',
+              'Toca cualquier punto del mapa o usa los botones · © OpenStreetMap contributors',
               style: TextStyle(color: Colors.white, fontSize: 11),
             ),
           ),
@@ -371,20 +371,69 @@ class _AuxilioScreenState extends State<AuxilioScreen> {
     );
   }
 
+  Widget _botonesZoomYMovimiento() {
+    const paso = 0.008;
+    return Column(
+      children: <Widget>[
+        Row(
+          children: <Widget>[
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: () => _ajustarZoom(0.8),
+                icon: const Icon(Icons.zoom_in),
+                label: const Text('Acercar mapa'),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: () => _ajustarZoom(-0.8),
+                icon: const Icon(Icons.zoom_out),
+                label: const Text('Alejar mapa'),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          alignment: WrapAlignment.center,
+          children: <Widget>[
+            OutlinedButton(
+              onPressed: () => _moverCentroMapa(dLat: paso),
+              child: const Text('↑ Norte'),
+            ),
+            OutlinedButton(
+              onPressed: () => _moverCentroMapa(dLat: -paso),
+              child: const Text('↓ Sur'),
+            ),
+            OutlinedButton(
+              onPressed: () => _moverCentroMapa(dLon: -paso),
+              child: const Text('← Oeste'),
+            ),
+            OutlinedButton(
+              onPressed: () => _moverCentroMapa(dLon: paso),
+              child: const Text('→ Este'),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
   Marker _marcadorTaller() => Marker(
         point: _taller,
         width: 40,
         height: 40,
-        child: const Center(
-          child: CircleAvatar(
-            radius: 18,
-            backgroundColor: AppTheme.primaryAmber,
-            child: Text(
-              'T',
-              style: TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
-              ),
+        child: const CircleAvatar(
+          radius: 18,
+          backgroundColor: AppTheme.primaryAmber,
+          child: Text(
+            'T',
+            style: TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
             ),
           ),
         ),
@@ -394,7 +443,11 @@ class _AuxilioScreenState extends State<AuxilioScreen> {
         point: _rider,
         width: 44,
         height: 44,
-        child: _MarcadorArrastrable(onDrag: _arrastrarRider),
+        child: const CircleAvatar(
+          radius: 18,
+          backgroundColor: AppTheme.confirmGreen,
+          child: Icon(Icons.two_wheeler, color: Colors.white, size: 20),
+        ),
       );
 
   Widget _filaDistancia() => Row(
@@ -417,26 +470,6 @@ class _AuxilioScreenState extends State<AuxilioScreen> {
                 fontSize: 12,
                 color: _enCobertura ? Colors.green.shade800 : Colors.red.shade800,
               ),
-            ),
-          ),
-        ],
-      );
-
-  Widget _botonesSimulacion() => Row(
-        children: <Widget>[
-          Expanded(
-            child: OutlinedButton.icon(
-              onPressed: () => _simular(2),
-              icon: const Icon(Icons.place),
-              label: const Text('Simular a 2 km'),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: OutlinedButton.icon(
-              onPressed: () => _simular(5.2),
-              icon: const Icon(Icons.place),
-              label: const Text('Simular a 5.2 km'),
             ),
           ),
         ],
@@ -593,29 +626,4 @@ class _AuxilioScreenState extends State<AuxilioScreen> {
 
   int _minutosEstimados(double km) =>
       km <= 0 ? 1 : (km / 15 * 60).round().clamp(1, 999);
-}
-
-/// Marcador del mototaxista: se puede arrastrar dentro del mapa.
-class _MarcadorArrastrable extends StatelessWidget {
-  const _MarcadorArrastrable({required this.onDrag});
-
-  final void Function(MapCamera camera, Offset delta) onDrag;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onPanUpdate: (details) {
-        final camera = MapCamera.maybeOf(context);
-        if (camera != null) onDrag(camera, details.delta);
-      },
-      child: const Center(
-        child: CircleAvatar(
-          radius: 18,
-          backgroundColor: AppTheme.confirmGreen,
-          child: Icon(Icons.two_wheeler, color: Colors.white, size: 20),
-        ),
-      ),
-    );
-  }
 }
