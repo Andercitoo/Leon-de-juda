@@ -94,7 +94,7 @@ class ApiService {
   // Cada item de repuestos debe tener: {'id_repuesto': int, 'cantidad': int, 'precio': double}
   static Future<Pedido> crearPedido({
     required String modalidadEntrega, // 'Delivery' o 'Recojo en tienda'
-    required List> repuestos,
+    required List<Map<String, dynamic>> repuestos,
   }) async {
     final response = await http.post(
       Uri.parse('$baseUrl/pedidos'),
