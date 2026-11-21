@@ -1,24 +1,30 @@
-const { pool } = require('../config/db');
+const pool = require('../config/db');
 
 const PedidoModel = {
-  async crearPedidoConBloqueo({ id_usuario, modalidad_entrega, costo_envio, items }) {
+  /**
+   * Reserva atómica de stock (RN-V01).
+   * Bloqueo pesimista SELECT ... FOR UPDATE dentro de una transacción ACID:
+   * si dos conductores compran la última unidad a la vez, el segundo recibe 409.
+   */
+  async crearPedidoConBloqueo({ id_usuario, modalidad_entrega, costoEnvioDomicilio, montoMinEnvio, items }) {
     const client = await pool.connect();
 
     try {
-      await client.query('BEGIN'); // Transacción ACID
+      await client.query('BEGIN');
 
       let subtotalTotal = 0;
       const detallesProcesados = [];
 
-      // 1. Bloqueo pesimista y verificación de stock (RN-V01)
-      for (const item of items) {
-        const id_repuesto = parseInt(item.id_repuesto, 10);
-        const cantidad = parseInt(item.cantidad, 10);
+      // Orden fijo por id para evitar interbloqueos entre transacciones concurrentes
+      const ordenados = [...items].sort((a, b) => a.id_repuesto - b.id_repuesto);
+
+      for (const item of ordenados) {
+        const { id_repuesto, cantidad } = item;
 
         const repRes = await client.query(
-          `SELECT id_repuesto, nombre, precio_unitario, stock_disponible 
-           FROM repuesto 
-           WHERE id_repuesto = $1 
+          `SELECT id_repuesto, nombre, precio_unitario, stock_disponible
+           FROM repuesto
+           WHERE id_repuesto = $1
            FOR UPDATE;`,
           [id_repuesto]
         );
@@ -33,47 +39,41 @@ const PedidoModel = {
         if (stockActual < cantidad) {
           throw {
             status: 409,
-            message: `Stock insuficiente para '${repuesto.nombre}'. Disponibles: ${stockActual}, Solicitados: ${cantidad}.`
+            message: stockActual === 0
+              ? `'${repuesto.nombre}' se acaba de agotar.`
+              : `Stock insuficiente para '${repuesto.nombre}'. Disponibles: ${stockActual}, solicitados: ${cantidad}.`,
           };
         }
 
-        // Descuenta disponible y aumenta stock bloqueado
         await client.query(
-          `UPDATE repuesto 
+          `UPDATE repuesto
            SET stock_disponible = stock_disponible - $1,
-               stock_bloqueado = COALESCE(stock_bloqueado, 0) + $1
+               stock_bloqueado  = stock_bloqueado + $1
            WHERE id_repuesto = $2;`,
           [cantidad, id_repuesto]
         );
 
-        const precioUnit = Number(repuesto.precio_unitario);
-        const subtotal = precioUnit * cantidad;
+        const subtotal = Number(repuesto.precio_unitario) * cantidad;
         subtotalTotal += subtotal;
-
-        detallesProcesados.push({
-          id_repuesto,
-          cantidad,
-          subtotal
-        });
+        detallesProcesados.push({ id_repuesto, nombre: repuesto.nombre, cantidad, subtotal });
       }
 
-      const totalPagar = subtotalTotal + Number(costo_envio);
+      // RN-P01 con precios reales de BD
+      let modalidad = modalidad_entrega;
+      if (modalidad === 'Delivery' && subtotalTotal < montoMinEnvio) {
+        modalidad = 'Recojo en tienda';
+      }
+      const costoEnvio = modalidad === 'Delivery' ? costoEnvioDomicilio : 0;
+      const totalPagar = subtotalTotal + costoEnvio;
 
-      // 2. Insertar cabecera con estado inicial 'Pendiente' y reserva de 15 minutos (RN-V01)
-      const queryPedido = `
-        INSERT INTO pedido (id_usuario, modalidad_entrega, costo_envio, total_pagar, estado_pedido, expira_reserva)
-        VALUES ($1, $2, $3, $4, 'Pendiente', NOW() + INTERVAL '15 minutes')
-        RETURNING *;
-      `;
-      const resPedido = await client.query(queryPedido, [
-        id_usuario,
-        modalidad_entrega,
-        costo_envio,
-        totalPagar
-      ]);
+      const resPedido = await client.query(
+        `INSERT INTO pedido (id_usuario, modalidad_entrega, costo_envio, total_pagar, estado_pedido, expira_reserva)
+         VALUES ($1, $2, $3, $4, 'Pendiente', NOW() + INTERVAL '15 minutes')
+         RETURNING *;`,
+        [id_usuario, modalidad, costoEnvio, totalPagar]
+      );
       const nuevoPedido = resPedido.rows[0];
 
-      // 3. Insertar detalle_pedido
       for (const det of detallesProcesados) {
         await client.query(
           `INSERT INTO detalle_pedido (id_pedido, id_repuesto, cantidad, subtotal)
@@ -83,14 +83,49 @@ const PedidoModel = {
       }
 
       await client.query('COMMIT');
-      return { nuevoPedido, totalPagar, detalles: detallesProcesados };
+      return { nuevoPedido, subtotal: subtotalTotal, detalles: detallesProcesados };
     } catch (error) {
       await client.query('ROLLBACK');
       throw error;
     } finally {
       client.release();
     }
-  }
+  },
+
+  /**
+   * RN-V01: libera el stock de pedidos 'Pendiente' cuya reserva de 15 min expiró.
+   */
+  async liberarReservasExpiradas() {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const expirados = await client.query(
+        `UPDATE pedido SET estado_pedido = 'Expirado'
+         WHERE estado_pedido = 'Pendiente' AND expira_reserva IS NOT NULL AND expira_reserva < NOW()
+         RETURNING id_pedido;`
+      );
+      if (expirados.rowCount > 0) {
+        const ids = expirados.rows.map((r) => r.id_pedido);
+        await client.query(
+          `UPDATE repuesto r
+           SET stock_disponible = r.stock_disponible + d.cant,
+               stock_bloqueado  = GREATEST(r.stock_bloqueado - d.cant, 0)
+           FROM (SELECT id_repuesto, SUM(cantidad) AS cant
+                 FROM detalle_pedido WHERE id_pedido = ANY($1::int[])
+                 GROUP BY id_repuesto) d
+           WHERE r.id_repuesto = d.id_repuesto;`,
+          [ids]
+        );
+      }
+      await client.query('COMMIT');
+      return expirados.rowCount;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  },
 };
 
 module.exports = PedidoModel;

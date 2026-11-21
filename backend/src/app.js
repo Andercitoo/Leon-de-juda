@@ -1,7 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 require('dotenv').config();
-process.env.DATABASE_URL = "postgres://postgres:@D70646634@localhost:5432/leondejuda";
+process.env.DATABASE_URL = process.env.DATABASE_URL || "postgres://postgres:123@localhost:5432/leondejuda";
 process.env.JWT_SECRET = "super_secreto_arca";
 process.env.RADIO_MAX_KM = 3.50;
 process.env.TALLER_LAT_ORIGEN = -12.215840;
@@ -32,6 +32,14 @@ app.patch('/api/auxilios/:id', authMiddleware, auxilioController.actualizarEstad
 // Catálogo y Transacciones
 app.get('/api/repuestos', repuestoController.obtenerCatalogo);
 app.post('/api/pedidos', authMiddleware, pedidoController.crearPedido);
+
+// RN-V01: cada minuto se libera el stock de reservas vencidas (15 min)
+const PedidoModel = require('./models/pedidoModel');
+setInterval(() => {
+  PedidoModel.liberarReservasExpiradas()
+    .then((n) => { if (n > 0) console.log(`RN-V01: ${n} reserva(s) expirada(s), stock liberado`); })
+    .catch((err) => console.error('Error liberando reservas:', err.message));
+}, 60 * 1000);
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {

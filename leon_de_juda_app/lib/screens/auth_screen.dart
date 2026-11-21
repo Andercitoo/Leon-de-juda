@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../services/api_service.dart';
 import '../theme/app_theme.dart';
 import 'home_screen.dart';
 
@@ -22,6 +23,35 @@ class _AuthScreenState extends State<AuthScreen> with SingleTickerProviderStateM
   final _dniController = TextEditingController();
   final _placaController = TextEditingController();
   final _passwordController = TextEditingController();
+
+  bool _ingresando = false;
+
+  // POST /api/auth/login: guarda el token JWT y el usuario en ApiService
+  Future<void> _iniciarSesion() async {
+    if (!_loginFormKey.currentState!.validate()) return;
+    setState(() => _ingresando = true);
+    try {
+      await ApiService.login(
+        _loginEmailController.text.trim(),
+        _loginPasswordController.text,
+      );
+      if (!mounted) return;
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => const HomeScreen()),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.toString().replaceFirst('Exception: ', '')),
+          backgroundColor: AppTheme.alertRed,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _ingresando = false);
+    }
+  }
 
   @override
   void initState() {
@@ -81,13 +111,15 @@ class _AuthScreenState extends State<AuthScreen> with SingleTickerProviderStateM
             const SizedBox(height: 24),
             TextFormField(
               controller: _loginEmailController,
-              keyboardType: TextInputType.emailAddress,
+              keyboardType: TextInputType.number,
+              maxLength: 8,
               decoration: const InputDecoration(
-                labelText: 'Correo Electrónico',
-                prefixIcon: Icon(Icons.email_outlined),
+                labelText: 'DNI',
+                prefixIcon: Icon(Icons.badge_outlined),
+                counterText: '',
               ),
-              validator: (value) => (value == null || !value.contains('@'))
-                  ? 'Ingresa un correo válido'
+              validator: (value) => (value == null || !RegExp(r'^\d{8}$').hasMatch(value.trim()))
+                  ? 'El DNI debe tener 8 dígitos'
                   : null,
             ),
             const SizedBox(height: 16),
@@ -104,15 +136,14 @@ class _AuthScreenState extends State<AuthScreen> with SingleTickerProviderStateM
             ),
             const SizedBox(height: 28),
             ElevatedButton(
-              onPressed: () {
-                if (_loginFormKey.currentState!.validate()) {
-                  Navigator.pushReplacement(
-                    context,
-                    MaterialPageRoute(builder: (context) => const HomeScreen()),
-                  );
-                }
-              },
-              child: const Text('INGRESAR', style: TextStyle(fontWeight: FontWeight.bold)),
+              onPressed: _ingresando ? null : _iniciarSesion,
+              child: _ingresando
+                  ? const SizedBox(
+                      height: 20,
+                      width: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white),
+                    )
+                  : const Text('INGRESAR', style: TextStyle(fontWeight: FontWeight.bold)),
             ),
           ],
         ),

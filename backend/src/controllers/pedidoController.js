@@ -1,55 +1,65 @@
-const pool = require('../config/db');
+const PedidoModel = require('../models/pedidoModel');
+
+// Acuerdos técnicos (RN-P01): envío desde S/ 30.00 con tarifa fija S/ 6.00
+const MONTO_MIN_ENVIO = 30.00;
+const COSTO_ENVIO = 6.00;
+
+// Acepta los valores de la BD ('Delivery' / 'Recojo en tienda') y los alias JSON ('DOMICILIO' / 'TIENDA')
+const normalizarModalidad = (valor) => {
+  const v = String(valor || '').trim().toUpperCase();
+  if (v === 'DOMICILIO' || v === 'DELIVERY') return 'Delivery';
+  return 'Recojo en tienda';
+};
 
 const crearPedido = async (req, res) => {
-    const id_usuario = req.body.id_usuario || req.user?.id_usuario;
-    const { repuestos, modalidad_entrega } = req.body;
+  // El usuario se toma del token JWT (authMiddleware); el body es solo respaldo
+  const id_usuario = req.user?.id_usuario || req.body.id_usuario;
+  const { repuestos, modalidad_entrega } = req.body;
 
-    try {
-        await pool.query('BEGIN');
+  if (!Array.isArray(repuestos) || repuestos.length === 0) {
+    return res.status(400).json({ error: 'El pedido debe incluir al menos un repuesto.' });
+  }
 
-        let total = 0;
-        for (let item of repuestos) {
-            total += (item.cantidad * item.precio);
-        }
+  const items = repuestos.map((r) => ({
+    id_repuesto: parseInt(r.id_repuesto, 10),
+    cantidad: parseInt(r.cantidad, 10),
+    precio: Number(r.precio) || 0,
+  }));
 
-        let costo_envio = 0.00;
-        let modalidad_final = modalidad_entrega;
-        
-        if (modalidad_entrega === 'Delivery') {
-            if (total < 30.00) {
-                modalidad_final = 'Recojo en tienda'; 
-            } else {
-                costo_envio = 5.00; 
-            }
-        }
+  if (items.some((i) => !Number.isInteger(i.id_repuesto) || !Number.isInteger(i.cantidad) || i.cantidad < 1)) {
+    return res.status(400).json({ error: 'Cada repuesto requiere id_repuesto y una cantidad mayor a 0.' });
+  }
 
-        const total_pagar = total + costo_envio;
+  // RN-P01: subtotal estimado con los precios del carrito; el modelo recalcula con precios de BD
+  const subtotalCliente = items.reduce((acc, i) => acc + i.cantidad * i.precio, 0);
+  let modalidad = normalizarModalidad(modalidad_entrega);
+  if (modalidad === 'Delivery' && subtotalCliente < MONTO_MIN_ENVIO) {
+    modalidad = 'Recojo en tienda';
+  }
 
-        const queryPedido = `
-            INSERT INTO pedido (id_usuario, modalidad_entrega, costo_envio, total_pagar, estado_pedido, expira_reserva)
-            VALUES ($1, $2, $3, $4, 'Pendiente', NOW() + INTERVAL '15 minutes') RETURNING *
-        `;
-        const resultPedido = await pool.query(queryPedido, [id_usuario, modalidad_final, costo_envio, total_pagar]);
-        const nuevoPedido = resultPedido.rows[0];
+  try {
+    const { nuevoPedido, subtotal, detalles } = await PedidoModel.crearPedidoConBloqueo({
+      id_usuario,
+      modalidad_entrega: modalidad,
+      costoEnvioDomicilio: COSTO_ENVIO,
+      montoMinEnvio: MONTO_MIN_ENVIO,
+      items,
+    });
 
-        for (let item of repuestos) {
-            await pool.query('INSERT INTO detalle_pedido (id_pedido, id_repuesto, cantidad, subtotal) VALUES ($1, $2, $3, $4)', 
-                [nuevoPedido.id_pedido, item.id_repuesto, item.cantidad, item.cantidad * item.precio]);
-            
-            await pool.query('UPDATE repuesto SET stock_disponible = stock_disponible - $1, stock_bloqueado = stock_bloqueado + $1 WHERE id_repuesto = $2', 
-                [item.cantidad, item.id_repuesto]);
-        }
-
-        await pool.query('COMMIT'); 
-        res.status(201).json({ 
-            mensaje: 'Pedido creado y stock reservado por 15 min', 
-            modalidad_aplicada: modalidad_final,
-            pedido: nuevoPedido 
-        });
-    } catch (err) {
-        await pool.query('ROLLBACK'); 
-        res.status(500).json({ error: 'Error procesando pedido: ' + err.message });
+    return res.status(201).json({
+      mensaje: 'Pedido creado y stock reservado por 15 min (RN-V01).',
+      modalidad_aplicada: nuevoPedido.modalidad_entrega,
+      subtotal,
+      detalles,
+      pedido: nuevoPedido,
+    });
+  } catch (err) {
+    if (err && err.status) {
+      return res.status(err.status).json({ error: err.message });
     }
+    console.error('Error en crearPedido:', err);
+    return res.status(500).json({ error: 'Error procesando pedido: ' + (err?.message || err) });
+  }
 };
 
 module.exports = { crearPedido };
