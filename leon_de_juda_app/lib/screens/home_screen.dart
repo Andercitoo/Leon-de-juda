@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import '../services/api_service.dart';
 import '../services/carrito_service.dart';
 import '../theme/app_theme.dart';
@@ -19,11 +20,36 @@ class _HomeScreenState extends State<HomeScreen> {
   int _indiceActual = 0;
   final CarritoService _carrito = CarritoService.instancia;
 
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _cargarPedidos());
+  }
+
+  Future<void> _cargarPedidos() async {
+    final idUsuario = ApiService.usuarioActual?.idUsuario;
+    if (idUsuario == null) return;
+    try {
+      final pedidos = await ApiService.getPedidos();
+      if (!mounted || ApiService.usuarioActual?.idUsuario != idUsuario) return;
+      _carrito.cargarPedidos(pedidos);
+    } catch (e) {
+      if (!mounted || ApiService.usuarioActual?.idUsuario != idUsuario) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('No se pudo cargar el historial de pedidos: $e'),
+        ),
+      );
+    }
+  }
+
   void _cambiarTab(int index) {
+    AppTheme.tap();
     setState(() => _indiceActual = index);
   }
 
   void _cerrarSesion() {
+    _carrito.limpiarSesion();
     ApiService.cerrarSesion();
     Navigator.pushReplacement(
       context,
@@ -42,9 +68,7 @@ class _HomeScreenState extends State<HomeScreen> {
         listenable: _carrito,
         builder: (context, _) => PerfilScreen(
           usuario: ApiService.usuarioActual,
-          historialPedidos: _carrito.pedidoReservado != null
-              ? [_carrito.pedidoReservado!]
-              : const [],
+          historialPedidos: _carrito.pedidosRealizados,
           onCerrarSesion: _cerrarSesion,
         ),
       ),
@@ -58,7 +82,7 @@ class _HomeScreenState extends State<HomeScreen> {
           currentIndex: _indiceActual,
           onTap: _cambiarTab,
           type: BottomNavigationBarType.fixed,
-          selectedItemColor: AppTheme.primaryAmber,
+          selectedItemColor: AppTheme.brandRed,
           unselectedItemColor: Colors.grey.shade600,
           items: [
             const BottomNavigationBarItem(
@@ -109,104 +133,121 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('León de Judá - Inicio'),
+        centerTitle: true,
+        title: const Text('Inicio'),
         actions: [
           IconButton(
             icon: const Icon(Icons.logout),
             tooltip: 'Cerrar sesión',
-            onPressed: _cerrarSesion,
+            onPressed: () {
+              AppTheme.tap();
+              _cerrarSesion();
+            },
           ),
         ],
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Row(
+      body: AppPageBackground(
+        child: SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(18, 18, 18, 26),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _buildWelcomeCard(nombre, placa),
+                const SizedBox(height: 22),
+                Row(
                   children: [
-                    const CircleAvatar(
-                      backgroundColor: AppTheme.primaryAmber,
-                      radius: 28,
-                      child: Icon(Icons.two_wheeler, color: Colors.white, size: 32),
-                    ),
-                    const SizedBox(width: 16),
                     Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            '¡Bienvenido, $nombre!',
-                            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            placa != null && placa.isNotEmpty
-                                ? 'Vehículo registrado: $placa'
-                                : 'Panel de repuestos y auxilio mecánico',
-                            style: const TextStyle(color: Colors.grey),
-                          ),
-                        ],
+                      child: _buildServiceCard(
+                        icon: Icons.build_rounded,
+                        title: 'Catálogo',
+                        selected: _indiceActual == 1,
+                        onTap: () => _cambiarTab(1),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: _buildServiceCard(
+                        icon: Icons.support_agent_rounded,
+                        title: 'Auxilio',
+                        selected: _indiceActual == 2,
+                        onTap: () => _cambiarTab(2),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _buildServiceCard(
+                        icon: Icons.shopping_bag_rounded,
+                        title: 'Carrito',
+                        selected: _indiceActual == 3,
+                        onTap: () => _cambiarTab(3),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _buildServiceCard(
+                        icon: Icons.person_rounded,
+                        title: 'Perfil',
+                        selected: _indiceActual == 4,
+                        onTap: () => _cambiarTab(4),
                       ),
                     ),
                   ],
                 ),
-              ),
-            ),
-            const SizedBox(height: 18),
-            const Text(
-              'Servicios Disponibles',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: _buildServiceCard(
-                    icon: Icons.build_outlined,
-                    title: 'Comprar repuesto',
-                    color: AppTheme.primaryAmber,
-                    onTap: () => _cambiarTab(1),
+                const SizedBox(height: 26),
+                const Text(
+                  'Novedades',
+                  style: TextStyle(
+                    color: AppTheme.darkText,
+                    fontSize: 19,
+                    fontWeight: FontWeight.w900,
                   ),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _buildServiceCard(
-                    icon: Icons.sos_outlined,
-                    title: 'Auxilio mecánico',
-                    color: AppTheme.alertRed,
-                    onTap: () => _cambiarTab(2),
-                  ),
-                ),
+                const SizedBox(height: 10),
+                _buildNewsCard(),
               ],
             ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: _buildServiceCard(
-                    icon: Icons.shopping_cart_outlined,
-                    title: 'Mi Carrito',
-                    color: Colors.blue.shade700,
-                    onTap: () => _cambiarTab(3),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _buildServiceCard(
-                    icon: Icons.badge_outlined,
-                    title: 'Mi Perfil',
-                    color: AppTheme.confirmGreen,
-                    onTap: () => _cambiarTab(4),
-                  ),
-                ),
-              ],
-            ),
-          ],
+          ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildWelcomeCard(String nombre, String? placa) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFEADBD0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '¡Hola, $nombre!',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: AppTheme.brandRed,
+              fontSize: 19,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            placa != null && placa.isNotEmpty
+                ? 'Vehículo · $placa'
+                : 'Repuestos y auxilio mecánico',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: AppTheme.darkText,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -214,28 +255,135 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildServiceCard({
     required IconData icon,
     required String title,
-    required Color color,
+    required bool selected,
     required VoidCallback onTap,
   }) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(14),
-      child: Card(
+    return Semantics(
+      button: true,
+      label: title,
+      child: Column(
+        children: [
+          Material(
+            color: Colors.transparent,
+            shape: const CircleBorder(),
+            child: InkWell(
+              onTap: onTap,
+              customBorder: const CircleBorder(),
+                child: AnimatedScale(
+                  scale: selected ? 1.05 : 1,
+                duration: const Duration(milliseconds: 220),
+                  curve: Curves.easeOutCubic,
+                  child: Container(
+                    width: 52,
+                    height: 52,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: const Color(0xFFB88A3A),
+                        width: selected ? 2 : 1,
+                    ),
+                    ),
+                    alignment: Alignment.center,
+                    child: ShaderMask(
+                      shaderCallback: AppTheme.amberGradient.createShader,
+                      blendMode: BlendMode.srcIn,
+                      child: Icon(
+                        icon,
+                        size: 26,
+                        color: Colors.white,
+                      ),
+                    ),
+                ),
+              ),
+            ),
+          ),
+            const SizedBox(height: 7),
+          Text(
+            title,
+            textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontWeight: FontWeight.w800,
+                fontSize: 10,
+                height: 1.1,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNewsCard() {
+    const months = [
+        'ene',
+        'feb',
+        'mar',
+        'abr',
+        'may',
+        'jun',
+        'jul',
+        'ago',
+        'sep',
+        'oct',
+        'nov',
+        'dic',
+    ];
+    final now = DateTime.now();
+    final date = '${now.day} ${months[now.month - 1]} ${now.year}';
+
+    return Card(
         child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 22.0, horizontal: 12.0),
-          child: Column(
+          padding: const EdgeInsets.all(12),
+          child: Row(
             children: [
-              Icon(icon, size: 38, color: color),
-              const SizedBox(height: 10),
-              Text(
-                title,
-                textAlign: TextAlign.center,
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Image.asset(
+                  'assets/images/air_filter.jpg',
+                  width: 104,
+                  height: 120,
+                  fit: BoxFit.cover,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      date,
+                      style: const TextStyle(
+                        color: AppTheme.brandRed,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 5),
+                    const Text(
+                      'Cuida el motor en cada ruta',
+                      style: TextStyle(
+                        color: AppTheme.darkText,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 5),
+                    const Text(
+                      'Revisa el filtro de aire con regularidad para mantener tu mototaxi en buen estado.',
+                      style: TextStyle(
+                        color: AppTheme.mutedText,
+                        fontSize: 11,
+                        height: 1.3,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ],
           ),
         ),
-      ),
     );
   }
 }

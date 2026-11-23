@@ -1,5 +1,7 @@
 import 'dart:convert';
+
 import 'package:http/http.dart' as http;
+
 import '../models/usuario.dart';
 import '../models/repuesto.dart';
 import '../models/pedido.dart';
@@ -43,7 +45,9 @@ class ApiService {
       usuarioActual = Usuario.fromJson(data['usuario']);
       return usuarioActual!;
     } else {
-      throw Exception(data['error'] ?? 'Error al iniciar sesión (${response.statusCode})');
+      throw Exception(
+        data['error'] ?? 'Error al iniciar sesión (${response.statusCode})',
+      );
     }
   }
 
@@ -75,7 +79,9 @@ class ApiService {
     if (response.statusCode == 201) {
       return Usuario.fromJson(data['usuario']);
     } else {
-      throw Exception(data['error'] ?? 'Error en el registro (${response.statusCode})');
+      throw Exception(
+        data['error'] ?? 'Error en el registro (${response.statusCode})',
+      );
     }
   }
 
@@ -129,9 +135,45 @@ class ApiService {
     } else {
       throw ApiException(
         response.statusCode,
-        data['error']?.toString() ?? 'Error al generar pedido (${response.statusCode})',
+        data['error']?.toString() ??
+            'Error al generar pedido (${response.statusCode})',
       );
     }
+  }
+
+  static Future<List<Pedido>> getPedidos() async {
+    final response = await http
+        .get(Uri.parse('$baseUrl/pedidos'), headers: _headers(auth: true))
+        .timeout(const Duration(seconds: 10));
+    final data = jsonDecode(response.body);
+    if (response.statusCode == 200) {
+      return (data as List<dynamic>)
+          .map((item) => Pedido.fromJson(Map<String, dynamic>.from(item)))
+          .toList();
+    }
+    throw ApiException(
+      response.statusCode,
+      data is Map<String, dynamic>
+          ? data['error']?.toString() ?? 'Error al cargar los pedidos.'
+          : 'Error al cargar los pedidos.',
+    );
+  }
+
+  static Future<Pedido> actualizarPedido(int idPedido, String accion) async {
+    final response = await http
+        .patch(
+          Uri.parse('$baseUrl/pedidos/$idPedido/$accion'),
+          headers: _headers(auth: true),
+        )
+        .timeout(const Duration(seconds: 10));
+    final data = jsonDecode(response.body);
+    if (response.statusCode == 200) {
+      return Pedido.fromJson(Map<String, dynamic>.from(data['pedido']));
+    }
+    throw ApiException(
+      response.statusCode,
+      data['error']?.toString() ?? 'Error al actualizar el pedido.',
+    );
   }
 
   // POST /api/auxilios
@@ -156,7 +198,9 @@ class ApiService {
     if (response.statusCode == 201 || response.statusCode == 200) {
       return Auxilio.fromJson(data['auxilio'] ?? data);
     } else {
-      throw Exception(data['error'] ?? 'Error al solicitar auxilio (${response.statusCode})');
+      throw Exception(
+        data['error'] ?? 'Error al solicitar auxilio (${response.statusCode})',
+      );
     }
   }
 

@@ -32,6 +32,8 @@ app.patch('/api/auxilios/:id', authMiddleware, auxilioController.actualizarEstad
 // Catálogo y Transacciones
 app.get('/api/repuestos', repuestoController.obtenerCatalogo);
 app.post('/api/pedidos', authMiddleware, pedidoController.crearPedido);
+app.get('/api/pedidos', authMiddleware, pedidoController.listarPedidos);
+app.patch('/api/pedidos/:id/:accion', authMiddleware, pedidoController.cambiarEstadoPedido);
 
 // RN-V01: cada minuto se libera el stock de reservas vencidas (15 min)
 const PedidoModel = require('./models/pedidoModel');
@@ -42,8 +44,15 @@ setInterval(() => {
 }, 60 * 1000);
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`Backend León de Judá activo en http://localhost:${PORT}`);
-});
+PedidoModel.habilitarEstadoPagado()
+  .then(() => {
+    app.listen(PORT, () => {
+      console.log(`Backend León de Judá activo en http://localhost:${PORT}`);
+    });
+  })
+  .catch((err) => {
+    console.error('No se pudo preparar la base de datos para los pedidos:', err.message);
+    process.exitCode = 1;
+  });
 
 module.exports = app;

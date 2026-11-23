@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import '../models/pedido.dart';
 import '../services/api_service.dart';
 import '../services/carrito_service.dart';
@@ -27,8 +28,72 @@ class _CarritoScreenState extends State<CarritoScreen> {
   String modalidadEntrega = CarritoService.modalidadTienda;
   bool aceptaDesglose = false;
   bool enviando = false;
+  int? pedidoActualizandoId;
+  final int? idUsuario = ApiService.usuarioActual?.idUsuario;
 
   String formatoSoles(double monto) => 'S/ ${monto.toStringAsFixed(2)}';
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => cargarPedidos());
+  }
+
+  Future<void> cargarPedidos() async {
+    if (ApiService.usuarioActual?.idUsuario != idUsuario) return;
+    try {
+      final pedidos = await ApiService.getPedidos();
+      if (mounted && ApiService.usuarioActual?.idUsuario == idUsuario) {
+        carrito.cargarPedidos(pedidos);
+      }
+    } catch (e) {
+      if (!mounted || ApiService.usuarioActual?.idUsuario != idUsuario) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('No se pudo actualizar el historial de pedidos: $e'),
+        ),
+      );
+    }
+  }
+
+  Future<void> actualizarEstadoPedido(Pedido pedido, String accion) async {
+    final id = pedido.idPedido;
+    if (id == null || pedidoActualizandoId != null) return;
+    setState(() => pedidoActualizandoId = id);
+    try {
+      final actualizado = await ApiService.actualizarPedido(id, accion);
+      if (!mounted) return;
+      carrito.actualizarPedido(
+        pedido.copyWith(
+          estadoPedido: actualizado.estadoPedido,
+          expiraReserva: actualizado.expiraReserva,
+          clearExpiraReserva: actualizado.expiraReserva == null,
+        ),
+      );
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            accion == 'pagar'
+                ? 'Pedido pagado. La reserva fue confirmada.'
+                : 'Pedido cancelado. El stock fue liberado.',
+          ),
+          backgroundColor: AppTheme.confirmGreen,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'No se pudo ${accion == 'pagar' ? 'pagar' : 'cancelar'} el pedido: $e',
+          ),
+        ),
+      );
+      await cargarPedidos();
+    } finally {
+      if (mounted) setState(() => pedidoActualizandoId = null);
+    }
+  }
 
   void irAlCatalogo() {
     if (widget.onIrAlCatalogo != null) {
@@ -43,8 +108,9 @@ class _CarritoScreenState extends State<CarritoScreen> {
     if (!aceptaDesglose || carrito.estaVacio) return;
 
     // RN-P01: nunca enviar DOMICILIO con subtotal < 30
-    final modalidad =
-        carrito.envioDisponible ? modalidadEntrega : CarritoService.modalidadTienda;
+    final modalidad = carrito.envioDisponible
+        ? modalidadEntrega
+        : CarritoService.modalidadTienda;
 
     setState(() => enviando = true);
     try {
@@ -61,7 +127,7 @@ class _CarritoScreenState extends State<CarritoScreen> {
       ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Pedido creado ✔ (201 Created) — stock reservado por 15 min'),
+          content: Text('Pedido creado ✔'),
           backgroundColor: AppTheme.confirmGreen,
         ),
       );
@@ -82,14 +148,16 @@ class _CarritoScreenState extends State<CarritoScreen> {
       case 409:
         titulo = '409 Conflict — Stock agotado';
         icono = Icons.inventory_2_outlined;
-        detalle = '${e.mensaje}\n\nOtro conductor reservó la última unidad. '
+        detalle =
+            '${e.mensaje}\n\nOtro conductor reservó la última unidad. '
             'Ajusta tu carrito y vuelve a intentarlo.';
         break;
       case 401:
       case 403:
         titulo = '${e.statusCode} — Sesión no válida';
         icono = Icons.lock_outline;
-        detalle = '${e.mensaje}\n\nCierra sesión e ingresa nuevamente con tu DNI y contraseña.';
+        detalle =
+            '${e.mensaje}\n\nCierra sesión e ingresa nuevamente con tu DNI y contraseña.';
         break;
       case 400:
       case 422:
@@ -114,7 +182,10 @@ class _CarritoScreenState extends State<CarritoScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Entendido', style: TextStyle(color: AppTheme.alertRed)),
+            child: const Text(
+              'Entendido',
+              style: TextStyle(color: AppTheme.alertRed),
+            ),
           ),
         ],
       ),
@@ -125,7 +196,11 @@ class _CarritoScreenState extends State<CarritoScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Carrito', style: TextStyle(fontWeight: FontWeight.bold)),
+        centerTitle: true,
+        title: const Text(
+          'Carrito',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
       ),
       body: ListenableBuilder(
         listenable: carrito,
@@ -136,15 +211,19 @@ class _CarritoScreenState extends State<CarritoScreen> {
             modalidadEntrega = CarritoService.modalidadTienda;
           }
 
-          return ListView(
-            padding: const EdgeInsets.all(14),
-            children: [
-              if (carrito.pedidoReservado != null) buildTarjetaReserva(),
-              if (carrito.estaVacio)
-                buildCarritoVacio()
-              else
-                ...buildDetalleCarrito(),
-            ],
+          return AppPageBackground(
+            child: ListView(
+              padding: const EdgeInsets.all(14),
+              children: [
+                ...carrito.pedidosPendientesEnOrdenDeCreacion.map(
+                  buildTarjetaReserva,
+                ),
+                if (carrito.estaVacio && !carrito.hayReserva)
+                  buildCarritoVacio()
+                else if (!carrito.estaVacio)
+                  ...buildDetalleCarrito(),
+              ],
+            ),
           );
         },
       ),
@@ -153,10 +232,11 @@ class _CarritoScreenState extends State<CarritoScreen> {
 
   // ---------------- Reserva activa (temporizador 15:00) ----------------
 
-  Widget buildTarjetaReserva() {
-    final pedido = carrito.pedidoReservado!;
-    final expirada = carrito.reservaExpirada;
+  Widget buildTarjetaReserva(Pedido pedido) {
+    final expirada = carrito.reservaExpirada(pedido);
     final colorBorde = expirada ? AppTheme.alertRed : AppTheme.confirmGreen;
+    final actualizando = pedidoActualizandoId == pedido.idPedido;
+    final bloqueado = pedidoActualizandoId != null;
 
     return Card(
       margin: const EdgeInsets.only(bottom: 14),
@@ -171,15 +251,18 @@ class _CarritoScreenState extends State<CarritoScreen> {
           children: [
             Row(
               children: [
-                Icon(expirada ? Icons.timer_off_outlined : Icons.check_circle,
-                    color: colorBorde),
+                Icon(
+                  expirada ? Icons.timer_off_outlined : Icons.check_circle,
+                  color: colorBorde,
+                ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    expirada
-                        ? 'Reserva expirada'
-                        : 'Pedido PED-${(pedido.idPedido ?? 0).toString().padLeft(4, '0')} reservado',
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                    expirada ? 'Reserva expirada' : 'Pedido reservado',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
                   ),
                 ),
               ],
@@ -189,18 +272,20 @@ class _CarritoScreenState extends State<CarritoScreen> {
               width: double.infinity,
               padding: const EdgeInsets.symmetric(vertical: 12),
               decoration: BoxDecoration(
-                color: expirada ? const Color(0xFFFBE4E4) : const Color(0xFFFDF3DC),
+                color: expirada
+                    ? const Color(0xFFFBE4E4)
+                    : const Color(0xFFFDF3DC),
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Column(
                 children: [
                   Text(
-                    expirada ? 'Stock liberado' : '⏱ Stock reservado (RN-V01)',
+                    expirada ? 'Stock liberado' : 'Reserva de stock',
                     style: const TextStyle(fontSize: 13),
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    carrito.tiempoRestanteTexto,
+                    carrito.tiempoRestanteTextoDe(pedido),
                     style: TextStyle(
                       fontSize: 34,
                       fontWeight: FontWeight.w800,
@@ -213,29 +298,79 @@ class _CarritoScreenState extends State<CarritoScreen> {
             ),
             const SizedBox(height: 10),
             filaMonto(
+              'Cliente',
+              pedido.nombreCliente.isEmpty ? 'Cliente' : pedido.nombreCliente,
+            ),
+            filaMonto('Subtotal', formatoSoles(pedido.subtotal)),
+            filaMonto('Envío', formatoSoles(pedido.costoEnvio)),
+            filaMonto(
+              'Total',
+              formatoSoles(pedido.totalPagar),
+              destacado: true,
+            ),
+            filaMonto(
+              'Código de pedido',
+              'PED-${(pedido.idPedido ?? 0).toString().padLeft(4, '0')}',
+            ),
+            filaMonto(
               'Modalidad',
               pedido.modalidadEntrega == CarritoService.modalidadDomicilio
                   ? 'Envío a domicilio'
                   : 'Recojo en tienda',
             ),
-            filaMonto('Envío', formatoSoles(pedido.costoEnvio)),
-            filaMonto('Total a pagar', formatoSoles(pedido.totalPagar), destacado: true),
             filaMonto('Estado', pedido.estadoPedido),
             const SizedBox(height: 6),
             Text(
               expirada
-                  ? 'No se confirmó a tiempo; el servidor devolvió el stock al catálogo.'
-                  : 'Acércate al taller (o espera tu envío) antes de que termine el tiempo.',
+                  ? 'La reserva venció y el stock fue liberado.'
+                  : 'Paga el pedido para confirmar la reserva',
               style: const TextStyle(fontSize: 12, color: Color(0xFF6F6A5E)),
             ),
-            const SizedBox(height: 8),
-            Align(
-              alignment: Alignment.centerRight,
-              child: TextButton(
-                onPressed: carrito.cerrarReserva,
-                child: const Text('Cerrar'),
+            const SizedBox(height: 10),
+            if (expirada)
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton.icon(
+                  onPressed: bloqueado ? null : cargarPedidos,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Actualizar pedido'),
+                ),
+              )
+            else
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: actualizando || bloqueado
+                          ? null
+                          : () => actualizarEstadoPedido(pedido, 'cancelar'),
+                      child: const Text('Cancelar pedido'),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: actualizando || bloqueado
+                          ? null
+                          : () => actualizarEstadoPedido(pedido, 'pagar'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.confirmGreen,
+                        foregroundColor: Colors.white,
+                      ),
+                      child: actualizando
+                          ? const SizedBox(
+                              height: 18,
+                              width: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Text('Pagar pedido'),
+                    ),
+                  ),
+                ],
               ),
-            ),
           ],
         ),
       ),
@@ -258,11 +393,21 @@ class _CarritoScreenState extends State<CarritoScreen> {
           ),
         ),
         const SizedBox(height: 8),
-        ElevatedButton.icon(
+        AppGradientButton(
           onPressed: irAlCatalogo,
-          icon: const Icon(Icons.build_outlined),
-          label: const Text('Ir al catálogo', style: TextStyle(fontWeight: FontWeight.bold)),
-          style: ElevatedButton.styleFrom(foregroundColor: const Color(0xFF1A1200)),
+          height: 52,
+          useGradient: false,
+          child: const Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.build_outlined),
+              SizedBox(width: 9),
+              Text(
+                'Ir al catálogo',
+                style: TextStyle(fontWeight: FontWeight.w800),
+              ),
+            ],
+          ),
         ),
       ],
     );
@@ -273,21 +418,29 @@ class _CarritoScreenState extends State<CarritoScreen> {
   List<Widget> buildDetalleCarrito() {
     final subtotal = carrito.subtotal;
     final envioDisponible = carrito.envioDisponible;
-    final costoEnvio =
-        modalidadEntrega == CarritoService.modalidadDomicilio ? CarritoService.costoEnvio : 0.0;
+    final costoEnvio = modalidadEntrega == CarritoService.modalidadDomicilio
+        ? CarritoService.costoEnvio
+        : 0.0;
     final total = subtotal + costoEnvio;
 
     return [
+      const Text(
+        'Productos',
+        style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+      ),
+      const SizedBox(height: 8),
       ...carrito.items.map(buildItem),
       const SizedBox(height: 8),
-      const Text('Modalidad de entrega',
-          style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+      const Text(
+        'Modalidad de entrega',
+        style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+      ),
       const SizedBox(height: 8),
       Row(
         children: [
           Expanded(
             child: botonModalidad(
-              texto: '🏪 Recojo en tienda',
+              texto: 'Recojo en tienda',
               valor: CarritoService.modalidadTienda,
               habilitado: true,
             ),
@@ -295,7 +448,8 @@ class _CarritoScreenState extends State<CarritoScreen> {
           const SizedBox(width: 10),
           Expanded(
             child: botonModalidad(
-              texto: '🛵 Envío a domicilio\n+ ${formatoSoles(CarritoService.costoEnvio)}',
+              texto:
+                  'Envío a domicilio\n+ ${formatoSoles(CarritoService.costoEnvio)}',
               valor: CarritoService.modalidadDomicilio,
               habilitado: envioDisponible, // RN-P01
             ),
@@ -328,35 +482,47 @@ class _CarritoScreenState extends State<CarritoScreen> {
       // RN-V02
       CheckboxListTile(
         value: aceptaDesglose,
-        onChanged: enviando ? null : (v) => setState(() => aceptaDesglose = v ?? false),
+        onChanged: enviando
+            ? null
+            : (v) => setState(() => aceptaDesglose = v ?? false),
         controlAffinity: ListTileControlAffinity.leading,
         contentPadding: EdgeInsets.zero,
         activeColor: AppTheme.primaryAmber,
-        title: const Text('Acepto el desglose de costos (RN-V02)'),
+        title: const Text('Acepto el desglose de costos'),
       ),
       const SizedBox(height: 4),
-      ElevatedButton(
+      AppGradientButton(
         onPressed: (aceptaDesglose && !enviando) ? confirmarPedido : null,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: AppTheme.confirmGreen,
-          foregroundColor: Colors.white,
-          disabledBackgroundColor: AppTheme.confirmGreen.withValues(alpha: 0.35),
-          disabledForegroundColor: Colors.white70,
-          padding: const EdgeInsets.symmetric(vertical: 16),
-        ),
+        height: 54,
+        useGradient: false,
         child: enviando
             ? const SizedBox(
                 height: 20,
                 width: 20,
-                child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white),
+                child: CircularProgressIndicator(
+                  strokeWidth: 2.5,
+                  color: Colors.white,
+                ),
               )
-            : const Text('Confirmar pedido',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            : const Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.receipt_long_rounded),
+                  SizedBox(width: 9),
+                  Text(
+                    'Confirmar pedido',
+                    style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+                  ),
+                ],
+              ),
       ),
       const SizedBox(height: 6),
       TextButton(
         onPressed: enviando ? null : carrito.vaciar,
-        child: const Text('Vaciar carrito', style: TextStyle(color: AppTheme.alertRed)),
+        child: const Text(
+          'Vaciar carrito',
+          style: TextStyle(color: AppTheme.alertRed),
+        ),
       ),
     ];
   }
@@ -374,19 +540,33 @@ class _CarritoScreenState extends State<CarritoScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(r.nombre, style: const TextStyle(fontWeight: FontWeight.bold)),
+                  Text(
+                    r.nombre,
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
                   Text(
                     '${formatoSoles(r.precioUnitario)} c/u · ${formatoSoles(item.subtotal)}',
-                    style: const TextStyle(color: Color(0xFF6F6A5E), fontSize: 13),
+                    style: const TextStyle(
+                      color: Color(0xFF6F6A5E),
+                      fontSize: 13,
+                    ),
                   ),
                 ],
               ),
             ),
-            botonCantidad(Icons.remove, enviando ? null : () => carrito.quitar(r.idRepuesto)),
+            botonCantidad(
+              Icons.remove,
+              enviando ? null : () => carrito.quitar(r.idRepuesto),
+            ),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 10),
-              child: Text('${item.cantidad}',
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              child: Text(
+                '${item.cantidad}',
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                ),
+              ),
             ),
             botonCantidad(
               Icons.add,
@@ -407,7 +587,9 @@ class _CarritoScreenState extends State<CarritoScreen> {
         style: OutlinedButton.styleFrom(
           padding: EdgeInsets.zero,
           side: const BorderSide(color: Color(0xFFE3DDCF)),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
           foregroundColor: AppTheme.darkText,
         ),
         child: Icon(icono, size: 18),
@@ -434,7 +616,9 @@ class _CarritoScreenState extends State<CarritoScreen> {
           disabledBackgroundColor: const Color(0xFFEDEAE3),
           disabledForegroundColor: Colors.black38,
           elevation: activo ? 2 : 0,
-          side: BorderSide(color: activo ? AppTheme.primaryAmber : const Color(0xFFE3DDCF)),
+          side: BorderSide(
+            color: activo ? AppTheme.primaryAmber : const Color(0xFFE3DDCF),
+          ),
         ),
         child: Text(
           texto,
@@ -451,8 +635,12 @@ class _CarritoScreenState extends State<CarritoScreen> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(etiqueta,
-              style: TextStyle(fontWeight: destacado ? FontWeight.bold : FontWeight.normal)),
+          Text(
+            etiqueta,
+            style: TextStyle(
+              fontWeight: destacado ? FontWeight.bold : FontWeight.normal,
+            ),
+          ),
           Text(
             valor,
             style: TextStyle(

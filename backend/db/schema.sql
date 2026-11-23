@@ -42,7 +42,7 @@ CREATE TABLE pedido (
     costo_envio       NUMERIC(6,2)  NOT NULL DEFAULT 0 CHECK (costo_envio >= 0),
     total_pagar       NUMERIC(8,2)  NOT NULL CHECK (total_pagar >= 0),
     estado_pedido     VARCHAR(20)   NOT NULL DEFAULT 'Pendiente'
-                      CHECK (estado_pedido IN ('Pendiente', 'Confirmado', 'Cancelado', 'Expirado')),
+                      CHECK (estado_pedido IN ('Pendiente', 'Confirmado', 'Pagado', 'Cancelado', 'Expirado')),
     expira_reserva    TIMESTAMP
 );
 

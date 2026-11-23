@@ -1,5 +1,7 @@
 import 'dart:async';
+
 import 'package:flutter/foundation.dart';
+
 import '../models/pedido.dart';
 import '../models/repuesto.dart';
 
@@ -80,9 +82,13 @@ class CarritoService extends ChangeNotifier {
       if (item != null) {
         _items[rep.idRepuesto] = ItemCarrito(
           repuesto: rep,
-          cantidad: item.cantidad > rep.stockDisponible ? rep.stockDisponible : item.cantidad,
+          cantidad: item.cantidad > rep.stockDisponible
+              ? rep.stockDisponible
+              : item.cantidad,
         );
-        if (_items[rep.idRepuesto]!.cantidad <= 0) _items.remove(rep.idRepuesto);
+        if (_items[rep.idRepuesto]!.cantidad <= 0) {
+          _items.remove(rep.idRepuesto);
+        }
         cambio = true;
       }
     }
@@ -94,66 +100,113 @@ class CarritoService extends ChangeNotifier {
     notifyListeners();
   }
 
+  void limpiarSesion() {
+    _timer?.cancel();
+    _timer = null;
+    _items.clear();
+    pedidosRealizados.clear();
+    notifyListeners();
+  }
+
   /// Cuerpo de `repuestos` para POST /api/pedidos.
   List<Map<String, dynamic>> toPedidoJson() => _items.values
-      .map((i) => {
-            'id_repuesto': i.repuesto.idRepuesto,
-            'cantidad': i.cantidad,
-            'precio': i.repuesto.precioUnitario,
-          })
+      .map(
+        (i) => {
+          'id_repuesto': i.repuesto.idRepuesto,
+          'cantidad': i.cantidad,
+          'precio': i.repuesto.precioUnitario,
+        },
+      )
       .toList();
 
-  // ---------------- Reserva activa (RN-V01) ----------------
+  // ---------------- Reservas activas (RN-V01) ----------------
 
-  Pedido? _pedidoReservado;
-  DateTime? _expiraEn;
   Timer? _timer;
 
   /// Pedidos creados en esta sesión (para la lista de PerfilScreen.historialPedidos).
   final List<Pedido> pedidosRealizados = [];
 
-  Pedido? get pedidoReservado => _pedidoReservado;
-  bool get hayReserva => _pedidoReservado != null && tiempoRestante > Duration.zero;
+  Pedido? get pedidoReservado {
+    for (final pedido in pedidosRealizados) {
+      if (pedido.estadoPedido.toLowerCase() == 'pendiente') return pedido;
+    }
+    return null;
+  }
 
-  Duration get tiempoRestante {
-    if (_expiraEn == null) return Duration.zero;
-    final r = _expiraEn!.difference(DateTime.now());
+  List<Pedido> get pedidosPendientes => pedidosRealizados
+      .where((p) => p.estadoPedido.toLowerCase() == 'pendiente')
+      .toList();
+
+  List<Pedido> get pedidosPendientesEnOrdenDeCreacion =>
+      pedidosPendientes.reversed.toList();
+
+  bool get hayReserva => pedidosPendientes.any(
+    (pedido) => tiempoRestanteDe(pedido) > Duration.zero,
+  );
+
+  Duration tiempoRestanteDe(Pedido pedido) {
+    final expiraEn = DateTime.tryParse(pedido.expiraReserva ?? '');
+    if (expiraEn == null) return Duration.zero;
+    final r = expiraEn.difference(DateTime.now());
     return r.isNegative ? Duration.zero : r;
   }
 
   /// Texto MM:SS del temporizador regresivo.
-  String get tiempoRestanteTexto {
-    final t = tiempoRestante;
+  String tiempoRestanteTextoDe(Pedido pedido) {
+    final t = tiempoRestanteDe(pedido);
     final mm = t.inMinutes.toString().padLeft(2, '0');
     final ss = (t.inSeconds % 60).toString().padLeft(2, '0');
     return '$mm:$ss';
   }
 
-  /// Se llama tras el 201 Created de POST /api/pedidos.
-  /// El conteo se hace con el reloj del dispositivo (15:00 desde la respuesta)
-  /// para no depender de la diferencia horaria entre el emulador y la PC.
+  bool reservaExpirada(Pedido pedido) =>
+      pedido.estadoPedido.toLowerCase() == 'pendiente' &&
+      tiempoRestanteDe(pedido) == Duration.zero;
+
+  /// Recibe las reservas persistidas en el servidor al iniciar o actualizar la sesión.
+  void cargarPedidos(List<Pedido> pedidos) {
+    pedidosRealizados
+      ..clear()
+      ..addAll(pedidos);
+    _actualizarTimer();
+    notifyListeners();
+  }
+
   void iniciarReserva(Pedido pedido) {
-    _pedidoReservado = pedido;
     pedidosRealizados.insert(0, pedido);
-    _expiraEn = DateTime.now().add(tiempoReserva);
-    _timer?.cancel();
-    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (tiempoRestante == Duration.zero) {
-        _timer?.cancel();
-      }
-      notifyListeners();
-    });
+    _actualizarTimer();
     _items.clear();
     notifyListeners();
   }
 
-  bool get reservaExpirada => _pedidoReservado != null && tiempoRestante == Duration.zero;
-
-  void cerrarReserva() {
-    _timer?.cancel();
-    _timer = null;
-    _pedidoReservado = null;
-    _expiraEn = null;
+  void actualizarPedido(Pedido pedidoActualizado) {
+    final index = pedidosRealizados.indexWhere(
+      (pedido) => pedido.idPedido == pedidoActualizado.idPedido,
+    );
+    if (index >= 0) pedidosRealizados[index] = pedidoActualizado;
+    _actualizarTimer();
     notifyListeners();
+  }
+
+  void _actualizarTimer() {
+    final hayTemporizadorActivo = pedidosPendientes.any(
+      (pedido) => tiempoRestanteDe(pedido) > Duration.zero,
+    );
+    if (!hayTemporizadorActivo) {
+      _timer?.cancel();
+      _timer = null;
+      return;
+    }
+    if (_timer != null) return;
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      final quedanReservas = pedidosPendientes.any(
+        (pedido) => tiempoRestanteDe(pedido) > Duration.zero,
+      );
+      if (!quedanReservas) {
+        _timer?.cancel();
+        _timer = null;
+      }
+      notifyListeners();
+    });
   }
 }

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import '../models/repuesto.dart';
 import '../services/api_service.dart';
 import '../services/carrito_service.dart';
@@ -25,8 +26,10 @@ class _CatalogoScreenState extends State<CatalogoScreen> {
     'Frenos',
     'Motor',
     'Transmisión',
+    'Acelerador',
     'Eléctrico',
     'Suspensión',
+    'Llantas',
   ];
 
   final CarritoService carrito = CarritoService.instancia;
@@ -68,7 +71,8 @@ class _CatalogoScreenState extends State<CatalogoScreen> {
       if (!mounted) return;
       setState(() {
         cargando = false;
-        error = 'No se pudo cargar el catálogo.\n'
+        error =
+            'No se pudo cargar el catálogo.\n'
             'Verifica que el servidor Node.js esté encendido en el puerto 3000.\n\n$e';
       });
     }
@@ -77,9 +81,11 @@ class _CatalogoScreenState extends State<CatalogoScreen> {
   List<Repuesto> get repuestosFiltrados {
     final q = textoBusqueda.trim().toLowerCase();
     return repuestos.where((r) {
-      final okMarca = marcaSeleccionada == 'Todas' || r.marca == marcaSeleccionada;
+      final okMarca =
+          marcaSeleccionada == 'Todas' || r.marca == marcaSeleccionada;
       final okCategoria =
-          categoriaSeleccionada == 'Todas' || r.categoriaAveria == categoriaSeleccionada;
+          categoriaSeleccionada == 'Todas' ||
+          r.categoriaAveria == categoriaSeleccionada;
       final okNombre = q.isEmpty || r.nombre.toLowerCase().contains(q);
       return okMarca && okCategoria && okNombre;
     }).toList();
@@ -87,12 +93,15 @@ class _CatalogoScreenState extends State<CatalogoScreen> {
 
   void agregarAlCarrito(Repuesto repuesto) {
     final agregado = carrito.agregar(repuesto);
+    AppTheme.tap();
     ScaffoldMessenger.of(context).hideCurrentSnackBar();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(agregado
-            ? '${repuesto.nombre} agregado al carrito'
-            : 'No hay más stock disponible de ${repuesto.nombre}'),
+        content: Text(
+          agregado
+              ? '${repuesto.nombre} agregado al carrito'
+              : 'No hay más stock disponible de ${repuesto.nombre}',
+        ),
         backgroundColor: agregado ? AppTheme.confirmGreen : AppTheme.alertRed,
         duration: const Duration(seconds: 2),
       ),
@@ -100,6 +109,7 @@ class _CatalogoScreenState extends State<CatalogoScreen> {
   }
 
   void irAlCarrito() {
+    AppTheme.tap();
     if (widget.onIrAlCarrito != null) {
       widget.onIrAlCarrito!();
     } else {
@@ -114,7 +124,8 @@ class _CatalogoScreenState extends State<CatalogoScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Catálogo', style: TextStyle(fontWeight: FontWeight.bold)),
+        centerTitle: true,
+        title: const Text('Catálogo'),
         actions: [
           ListenableBuilder(
             listenable: carrito,
@@ -131,42 +142,122 @@ class _CatalogoScreenState extends State<CatalogoScreen> {
           ),
         ],
       ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(14, 14, 14, 4),
-            child: TextField(
-              controller: buscadorController,
-              decoration: InputDecoration(
-                hintText: 'Buscar repuesto…',
-                prefixIcon: const Icon(Icons.search),
-                isDense: true,
-                suffixIcon: textoBusqueda.isEmpty
-                    ? null
-                    : IconButton(
-                        icon: const Icon(Icons.clear),
-                        onPressed: () {
-                          buscadorController.clear();
-                          setState(() => textoBusqueda = '');
-                        },
-                      ),
+      body: DecoratedBox(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            colors: [AppTheme.backgroundSand, Color(0xFFFFF3E2)],
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+          ),
+        ),
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 6),
+              child: TextField(
+                controller: buscadorController,
+                decoration: InputDecoration(
+                  hintText: 'Busca una pieza para tu ruta',
+                  prefixIcon: const Icon(
+                    Icons.search,
+                    color: AppTheme.brandRed,
+                  ),
+                  isDense: true,
+                  suffixIcon: textoBusqueda.isEmpty
+                      ? null
+                      : IconButton(
+                          icon: const Icon(Icons.clear),
+                          onPressed: () {
+                            AppTheme.tap();
+                            buscadorController.clear();
+                            setState(() => textoBusqueda = '');
+                          },
+                        ),
+                ),
+                onChanged: (v) => setState(() => textoBusqueda = v),
               ),
-              onChanged: (v) => setState(() => textoBusqueda = v),
             ),
-          ),
-          buildFilaChips(
-            opciones: marcas,
-            seleccionada: marcaSeleccionada,
-            onSeleccionar: (m) => setState(() => marcaSeleccionada = m),
-          ),
-          buildFilaChips(
-            opciones: categorias,
-            seleccionada: categoriaSeleccionada,
-            onSeleccionar: (c) => setState(() => categoriaSeleccionada = c),
-          ),
-          const SizedBox(height: 4),
-          Expanded(child: buildContenido()),
-        ],
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Card(
+                elevation: 1,
+                shadowColor: AppTheme.brandRed.withValues(alpha: 0.08),
+                child: Theme(
+                  data: Theme.of(context).copyWith(
+                    dividerColor: Colors.transparent,
+                    splashColor: AppTheme.primaryAmber.withValues(alpha: 0.12),
+                  ),
+                  child: ExpansionTile(
+                    shape: const RoundedRectangleBorder(),
+                    leading: Container(
+                      padding: const EdgeInsets.all(9),
+                      decoration: BoxDecoration(
+                        gradient: AppTheme.amberGradient,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(Icons.tune, color: AppTheme.darkText),
+                    ),
+                    title: const Text(
+                      'Filtrar piezas',
+                      style: TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                    subtitle: Text(
+                      '$marcaSeleccionada · $categoriaSeleccionada',
+                      style: const TextStyle(color: AppTheme.mutedText),
+                    ),
+                    onExpansionChanged: (_) => AppTheme.tap(),
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'MARCA',
+                              style: TextStyle(
+                                color: AppTheme.brandRed,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 1,
+                                fontSize: 11,
+                              ),
+                            ),
+                            buildFilaChips(
+                              opciones: marcas,
+                              seleccionada: marcaSeleccionada,
+                              onSeleccionar: (m) {
+                                AppTheme.tap();
+                                setState(() => marcaSeleccionada = m);
+                              },
+                            ),
+                            const SizedBox(height: 8),
+                            const Text(
+                              'TIPO DE PIEZA',
+                              style: TextStyle(
+                                color: AppTheme.brandRed,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 1,
+                                fontSize: 11,
+                              ),
+                            ),
+                            buildFilaChips(
+                              opciones: categorias,
+                              seleccionada: categoriaSeleccionada,
+                              onSeleccionar: (c) {
+                                AppTheme.tap();
+                                setState(() => categoriaSeleccionada = c);
+                              },
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            Expanded(child: buildContenido()),
+          ],
+        ),
       ),
     );
   }
@@ -191,7 +282,7 @@ class _CatalogoScreenState extends State<CatalogoScreen> {
             selected: activo,
             showCheckmark: false,
             onSelected: (_) => onSeleccionar(opcion),
-            selectedColor: AppTheme.primaryAmber,
+            selectedColor: AppTheme.amberLight,
             backgroundColor: Colors.white,
             labelStyle: TextStyle(
               color: activo ? const Color(0xFF1A1200) : AppTheme.darkText,
@@ -211,7 +302,9 @@ class _CatalogoScreenState extends State<CatalogoScreen> {
 
   Widget buildContenido() {
     if (cargando) {
-      return const Center(child: CircularProgressIndicator(color: AppTheme.primaryAmber));
+      return const Center(
+        child: CircularProgressIndicator(color: AppTheme.brandRed),
+      );
     }
     if (error != null) {
       return Center(
@@ -243,15 +336,56 @@ class _CatalogoScreenState extends State<CatalogoScreen> {
           ? ListView(
               children: const [
                 SizedBox(height: 60),
-                Center(child: Text('Sin resultados.', style: TextStyle(color: Colors.grey))),
+                Center(
+                  child: Text(
+                    'Sin resultados.',
+                    style: TextStyle(color: Colors.grey),
+                  ),
+                ),
               ],
             )
           : ListenableBuilder(
               listenable: carrito,
-              builder: (context, _) => ListView.builder(
-                padding: const EdgeInsets.fromLTRB(14, 4, 14, 20),
-                itemCount: lista.length,
-                itemBuilder: (context, i) => buildTarjetaRepuesto(lista[i]),
+              builder: (context, _) => LayoutBuilder(
+                builder: (context, constraints) {
+                  const gridPadding = 14.0;
+                  const spacing = 12.0;
+                  const maxCardWidth = 260.0;
+                  final contentWidth = constraints.maxWidth - gridPadding * 2;
+                  final crossAxisCount =
+                      ((contentWidth + spacing) / (maxCardWidth + spacing))
+                          .ceil()
+                          .clamp(2, 8)
+                          .toInt();
+                  final cardWidth =
+                      (contentWidth - spacing * (crossAxisCount - 1)) /
+                      crossAxisCount;
+
+                  return GridView.builder(
+                    padding: const EdgeInsets.fromLTRB(
+                      gridPadding,
+                      12,
+                      gridPadding,
+                      24,
+                    ),
+                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: crossAxisCount,
+                      crossAxisSpacing: spacing,
+                      mainAxisSpacing: spacing,
+                      mainAxisExtent: cardWidth + 170,
+                    ),
+                    itemCount: lista.length,
+                    itemBuilder: (context, i) => TweenAnimationBuilder<double>(
+                      key: ValueKey(lista[i].idRepuesto),
+                      tween: Tween(begin: 0.94, end: 1),
+                      duration: Duration(milliseconds: 220 + (i % 5) * 55),
+                      curve: Curves.easeOutCubic,
+                      builder: (context, scale, child) =>
+                          Transform.scale(scale: scale, child: child),
+                      child: buildTarjetaRepuesto(lista[i]),
+                    ),
+                  );
+                },
               ),
             ),
     );
@@ -278,64 +412,165 @@ class _CatalogoScreenState extends State<CatalogoScreen> {
     }
 
     return Card(
-      margin: const EdgeInsets.only(bottom: 10),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: Text(
-                    r.nombre,
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+      elevation: 2,
+      shadowColor: AppTheme.brandRed.withValues(alpha: 0.08),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: AppTheme.tap,
+        borderRadius: BorderRadius.circular(20),
+        child: Padding(
+          padding: const EdgeInsets.all(10),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Stack(
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(14),
+                    child: AspectRatio(
+                      aspectRatio: 1,
+                      child: buildImagenRepuesto(r),
+                    ),
                   ),
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  'S/ ${r.precioUnitario.toStringAsFixed(2)}',
-                  style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 17),
-                ),
-              ],
-            ),
-            const SizedBox(height: 2),
-            Text(
-              '${r.marca} · ${r.categoriaAveria}',
-              style: const TextStyle(color: Color(0xFF6F6A5E), fontSize: 13),
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFDF3DC),
-                    borderRadius: BorderRadius.circular(99),
+                  Positioned(
+                    top: 8,
+                    left: 8,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 9,
+                        vertical: 5,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.92),
+                        borderRadius: BorderRadius.circular(30),
+                      ),
+                      child: Text(
+                        r.marca.toUpperCase(),
+                        style: const TextStyle(
+                          color: AppTheme.brandRed,
+                          fontSize: 9,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 0.7,
+                        ),
+                      ),
+                    ),
                   ),
-                  child: Text(
-                    textoStock,
-                    style: TextStyle(fontSize: 12, color: colorStock, fontWeight: FontWeight.w600),
-                  ),
-                ),
-                if (enCarrito > 0) ...[
-                  const SizedBox(width: 6),
-                  Text('· $enCarrito en carrito',
-                      style: const TextStyle(fontSize: 12, color: Color(0xFF6F6A5E))),
                 ],
-                const Spacer(),
-                ElevatedButton(
-                  onPressed: (agotado || restante <= 0) ? null : () => agregarAlCarrito(r),
-                  style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    foregroundColor: const Color(0xFF1A1200),
-                  ),
-                  child: const Text('Agregar', style: TextStyle(fontWeight: FontWeight.bold)),
+              ),
+              const SizedBox(height: 9),
+              Text(
+                r.nombre,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 13,
+                  height: 1.15,
                 ),
-              ],
-            ),
-          ],
+              ),
+              Text(
+                r.categoriaAveria,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: AppTheme.mutedText, fontSize: 11),
+              ),
+              const Spacer(),
+              Align(
+                alignment: Alignment.centerRight,
+                child: Text(
+                  textoStock,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: colorStock,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 3),
+              Row(
+                children: [
+                  Text(
+                    'S/ ${r.precioUnitario.toStringAsFixed(2)}',
+                    style: const TextStyle(
+                      color: AppTheme.brandRed,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 7),
+              SizedBox(
+                width: double.infinity,
+                height: 36,
+                child: ElevatedButton.icon(
+                  onPressed: (agotado || restante <= 0)
+                      ? null
+                      : () => agregarAlCarrito(r),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.brandRed,
+                    disabledBackgroundColor: const Color(0xFFE7D9D4),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    textStyle: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  icon: const Icon(Icons.add_shopping_cart, size: 15),
+                  label: const Text('Agregar'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget buildImagenRepuesto(Repuesto repuesto) {
+    final nombre = repuesto.nombre.toLowerCase();
+    final String? asset;
+    if (nombre.contains('pastilla') || nombre.contains('zapata')) {
+      asset = 'assets/images/brake_pads.jpg';
+    } else if (nombre.contains('cadena')) {
+      asset = 'assets/images/transmission_chain.jpg';
+    } else if (nombre.contains('embrague')) {
+      asset = 'assets/images/clutch_discs.jpg';
+    } else if (nombre.contains('buj')) {
+      asset = 'assets/images/motor_engine.jpg';
+    } else if (nombre.contains('filtro')) {
+      asset = 'assets/images/air_filter.jpg';
+    } else if (nombre.contains('faro')) {
+      asset = 'assets/images/headlight.jpg';
+    } else if (nombre.contains('bater')) {
+      asset = 'assets/images/battery.jpg';
+    } else if (nombre.contains('llanta')) {
+      asset = 'assets/images/tire.jpg';
+    } else {
+      asset = null;
+    }
+
+    if (asset == null) {
+      return _imagenAlternativa();
+    }
+    return Image.asset(
+      asset,
+      fit: BoxFit.cover,
+      errorBuilder: (context, error, stackTrace) => _imagenAlternativa(),
+    );
+  }
+
+  Widget _imagenAlternativa() {
+    return DecoratedBox(
+      decoration: const BoxDecoration(gradient: AppTheme.amberGradient),
+      child: const Center(
+        child: Icon(
+          Icons.settings_outlined,
+          size: 48,
+          color: AppTheme.brandRed,
         ),
       ),
     );

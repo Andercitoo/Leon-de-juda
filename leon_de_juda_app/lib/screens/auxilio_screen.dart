@@ -20,7 +20,8 @@ class AuxilioScreen extends StatefulWidget {
   State<AuxilioScreen> createState() => _AuxilioScreenState();
 }
 
-class _AuxilioScreenState extends State<AuxilioScreen> {
+class _AuxilioScreenState extends State<AuxilioScreen>
+    with WidgetsBindingObserver {
   static const LatLng _taller = LatLng(
     AuxilioConfig.tallerLat,
     AuxilioConfig.tallerLon,
@@ -36,9 +37,8 @@ class _AuxilioScreenState extends State<AuxilioScreen> {
     AuxilioConfig.tallerLon + 0.012,
   );
   double _zoomActual = 14.5;
-  bool _gpsActive = true;
+  bool _gpsActive = false;
   bool _locating = false;
-  bool _modoSimulacion = false;
   bool _submitting = false;
   bool _advancing = false;
   String? _gpsError;
@@ -54,11 +54,18 @@ class _AuxilioScreenState extends State<AuxilioScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _iniciarGps();
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _iniciarGps();
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _positionSubscription?.cancel();
     _referenciaController.dispose();
     _mapController.dispose();
@@ -75,11 +82,18 @@ class _AuxilioScreenState extends State<AuxilioScreen> {
 
   // ------------------------------------------------------------------ GPS
   Future<void> _iniciarGps() async {
-    if (mounted) setState(() => _locating = true);
+    if (mounted) {
+      setState(() {
+        _gpsActive = false;
+        _locating = true;
+      });
+    }
     try {
       final servicioActivo = await Geolocator.isLocationServiceEnabled();
       if (!servicioActivo) {
-        _fallarGps('El servicio de ubicación del dispositivo está desactivado.');
+        _fallarGps(
+          'El servicio de ubicación del dispositivo está desactivado.',
+        );
         return;
       }
 
@@ -89,8 +103,10 @@ class _AuxilioScreenState extends State<AuxilioScreen> {
       }
       if (permiso == LocationPermission.denied ||
           permiso == LocationPermission.deniedForever) {
-        _fallarGps('Permiso de ubicación denegado. Habilítalo en los ajustes '
-            'del sistema para pedir auxilio.');
+        _fallarGps(
+          'Permiso de ubicación denegado. Habilítalo en los ajustes '
+          'del sistema para pedir auxilio.',
+        );
         return;
       }
 
@@ -105,7 +121,6 @@ class _AuxilioScreenState extends State<AuxilioScreen> {
         _gpsActive = true;
         _locating = false;
         _gpsError = null;
-        _modoSimulacion = false;
       });
       _escucharPosiciones();
     } catch (e) {
@@ -119,15 +134,14 @@ class _AuxilioScreenState extends State<AuxilioScreen> {
       accuracy: LocationAccuracy.high,
       distanceFilter: 10,
     );
-    _positionSubscription = Geolocator.getPositionStream(
-      locationSettings: settings,
-    ).listen(
-      (posicion) {
-        if (!mounted) return;
-        setState(() => _rider = LatLng(posicion.latitude, posicion.longitude));
-      },
-      onError: (Object e) => _fallarGps('Se perdió la señal GPS: $e'),
-    );
+    _positionSubscription =
+        Geolocator.getPositionStream(locationSettings: settings)
+            .listen((posicion) {
+              if (!mounted) return;
+              setState(
+                () => _rider = LatLng(posicion.latitude, posicion.longitude),
+              );
+            }, onError: (Object e) => _fallarGps('Se perdió la señal GPS: $e'));
   }
 
   void _fallarGps(String mensaje) {
@@ -141,23 +155,12 @@ class _AuxilioScreenState extends State<AuxilioScreen> {
     });
   }
 
-  void _detenerGps() {
-    _positionSubscription?.cancel();
-    _positionSubscription = null;
-    setState(() {
-      _gpsActive = false;
-      _locating = false;
-      _gpsError = 'GPS desactivado manualmente. El envío está bloqueado.';
-    });
-  }
-
   // ------------------------------------------------------------- Mapa
   void _moverRider(LatLng punto) {
     _positionSubscription?.cancel();
     _positionSubscription = null;
     setState(() {
       _rider = punto;
-      _modoSimulacion = true;
     });
   }
 
@@ -186,6 +189,25 @@ class _AuxilioScreenState extends State<AuxilioScreen> {
   Future<void> _solicitarAuxilio() async {
     if (!_gpsActive) {
       setState(() => _respuesta = AuxilioRespuesta.gpsApagado());
+      return;
+    }
+    late final bool servicioActivo;
+    late final LocationPermission permiso;
+    try {
+      servicioActivo = await Geolocator.isLocationServiceEnabled();
+      permiso = await Geolocator.checkPermission();
+    } catch (e) {
+      _fallarGps('No se pudo verificar la ubicación: $e');
+      return;
+    }
+    if (!servicioActivo ||
+        (permiso != LocationPermission.whileInUse &&
+            permiso != LocationPermission.always)) {
+      _fallarGps(
+        !servicioActivo
+            ? 'El servicio de ubicación del dispositivo está desactivado.'
+            : 'Permiso de ubicación denegado. Habilítalo en los ajustes del sistema.',
+      );
       return;
     }
 
@@ -249,59 +271,35 @@ class _AuxilioScreenState extends State<AuxilioScreen> {
   // --------------------------------------------------------------- UI
   @override
   Widget build(BuildContext context) {
-    final nombre = ApiService.usuarioActual?.nombre ?? 'Conductor';
     return Scaffold(
-      appBar: AppBar(title: const Text('Pedir auxilio mecánico')),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              Text(
-                'Hola, $nombre',
-                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-              ),
-              const SizedBox(height: 12),
-              _tarjetaGps(),
-              const SizedBox(height: 12),
-              _tarjetaMapa(),
-              const SizedBox(height: 8),
-              _botonesZoomYMovimiento(),
-              const SizedBox(height: 12),
-              _filaDistancia(),
-              const SizedBox(height: 16),
-              _formulario(),
-              const SizedBox(height: 12),
-              _tarjetaRespuesta(),
-              if (_auxilio != null) ...<Widget>[
+      appBar: AppBar(
+        centerTitle: true,
+        title: const Text('Auxilio mecánico'),
+      ),
+      body: AppPageBackground(
+        child: SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                _tarjetaMapa(),
+                const SizedBox(height: 8),
+                _botonesZoomYMovimiento(),
                 const SizedBox(height: 12),
-                _tarjetaSeguimiento(_auxilio!),
+                _filaDistancia(),
+                const SizedBox(height: 16),
+                _formulario(),
+                const SizedBox(height: 12),
+                _tarjetaRespuesta(),
+                if (_auxilio != null) ...<Widget>[
+                  const SizedBox(height: 12),
+                  _tarjetaSeguimiento(_auxilio!),
+                ],
               ],
-            ],
+            ),
           ),
         ),
-      ),
-    );
-  }
-
-  Widget _tarjetaGps() {
-    final subtitle = _locating
-        ? 'Obteniendo ubicación…'
-        : _gpsError ??
-            (_modoSimulacion
-                ? 'Ubicación ajustada en el mapa (simulación)'
-                : 'Ubicación del dispositivo (geolocator)');
-    return Card(
-      child: SwitchListTile(
-        secondary: Icon(
-          _gpsActive ? Icons.gps_fixed : Icons.gps_off,
-          color: _gpsActive ? AppTheme.confirmGreen : AppTheme.alertRed,
-        ),
-        title: Text('GPS ${_gpsActive ? "Activo" : "Desactivado"}'),
-        subtitle: Text(subtitle),
-        value: _gpsActive,
-        onChanged: (activo) => activo ? _iniciarGps() : _detenerGps(),
       ),
     );
   }
@@ -335,7 +333,8 @@ class _AuxilioScreenState extends State<AuxilioScreen> {
                   ),
                   children: <Widget>[
                     TileLayer(
-                      urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                      urlTemplate:
+                          'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                       userAgentPackageName: 'com.leondejuda.app',
                       maxNativeZoom: 19,
                     ),
@@ -359,7 +358,7 @@ class _AuxilioScreenState extends State<AuxilioScreen> {
             ),
           ),
           Container(
-            color: Colors.black54,
+            color: AppTheme.brandRed,
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             child: const Text(
               'Toca cualquier punto del mapa o usa los botones · © OpenStreetMap contributors',
@@ -423,113 +422,123 @@ class _AuxilioScreenState extends State<AuxilioScreen> {
   }
 
   Marker _marcadorTaller() => Marker(
-        point: _taller,
-        width: 40,
-        height: 40,
-        child: const CircleAvatar(
-          radius: 18,
-          backgroundColor: AppTheme.primaryAmber,
-          child: Text(
-            'T',
-            style: TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        ),
-      );
+    point: _taller,
+    width: 40,
+    height: 40,
+    child: const CircleAvatar(
+      radius: 18,
+      backgroundColor: AppTheme.primaryAmber,
+      child: Text(
+        'T',
+        style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+      ),
+    ),
+  );
 
   Marker _marcadorRider() => Marker(
-        point: _rider,
-        width: 44,
-        height: 44,
-        child: const CircleAvatar(
-          radius: 18,
-          backgroundColor: AppTheme.confirmGreen,
-          child: Icon(Icons.two_wheeler, color: Colors.white, size: 20),
-        ),
-      );
+    point: _rider,
+    width: 44,
+    height: 44,
+    child: const CircleAvatar(
+      radius: 18,
+      backgroundColor: AppTheme.confirmGreen,
+      child: Icon(Icons.person_pin_circle, color: Colors.white, size: 24),
+    ),
+  );
 
   Widget _filaDistancia() => Row(
-        children: <Widget>[
-          Expanded(
-            child: Text(
-              'Distancia (Haversine): ${_distanciaKm.toStringAsFixed(2)} km',
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
+    children: <Widget>[
+      Expanded(
+        child: Text(
+          'Distancia: ${_distanciaKm.toStringAsFixed(2)} km',
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
+      ),
+      Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: _enCobertura ? Colors.green.shade100 : Colors.red.shade100,
+          borderRadius: BorderRadius.circular(99),
+        ),
+        child: Text(
+          _enCobertura ? 'Dentro de cobertura' : 'Fuera de cobertura',
+          style: TextStyle(
+            fontSize: 12,
+            color: _enCobertura ? Colors.green.shade800 : Colors.red.shade800,
           ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-            decoration: BoxDecoration(
-              color: _enCobertura ? Colors.green.shade100 : Colors.red.shade100,
-              borderRadius: BorderRadius.circular(99),
-            ),
-            child: Text(
-              _enCobertura ? 'Dentro de cobertura' : 'Fuera de cobertura',
-              style: TextStyle(
-                fontSize: 12,
-                color: _enCobertura ? Colors.green.shade800 : Colors.red.shade800,
-              ),
-            ),
-          ),
-        ],
-      );
+        ),
+      ),
+    ],
+  );
 
   Widget _formulario() => Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          DropdownButtonFormField<String>(
-            initialValue: _falla,
-            decoration: const InputDecoration(
-              labelText: '¿Qué le pasó a tu vehículo?',
-            ),
-            items: AuxilioConfig.fallas
-                .map(
-                  (falla) => DropdownMenuItem<String>(
-                    value: falla,
-                    child: Text(falla),
-                  ),
-                )
-                .toList(),
-            onChanged: (valor) => setState(() => _falla = valor ?? _falla),
-          ),
-          const SizedBox(height: 10),
-          TextField(
-            controller: _referenciaController,
-            decoration: const InputDecoration(
-              labelText: 'Referencia (opcional)',
-              hintText: 'Frente al paradero principal',
-            ),
-          ),
-          const SizedBox(height: 12),
-          if (!_gpsActive)
-            const Padding(
-              padding: EdgeInsets.only(bottom: 8),
-              child: Text(
-                '⚠ GPS desactivado: activa la ubicación para poder solicitar auxilio.',
-                style: TextStyle(color: AppTheme.alertRed),
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: <Widget>[
+      DropdownButtonFormField<String>(
+        initialValue: _falla,
+        decoration: const InputDecoration(
+          labelText: '¿Qué le pasó a tu vehículo?',
+        ),
+        items: AuxilioConfig.fallas
+            .map(
+              (falla) =>
+                  DropdownMenuItem<String>(value: falla, child: Text(falla)),
+            )
+            .toList(),
+        onChanged: (valor) => setState(() => _falla = valor ?? _falla),
+      ),
+      const SizedBox(height: 10),
+      TextField(
+        controller: _referenciaController,
+        decoration: const InputDecoration(
+          labelText: 'Referencia (opcional)',
+          hintText: 'Frente al paradero principal',
+        ),
+      ),
+      const SizedBox(height: 12),
+      if (!_gpsActive)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Column(
+            children: [
+              Text(
+                _locating ? 'Obteniendo ubicación…' : _gpsError ?? 'Activa la ubicación y concede el permiso para solicitar auxilio.',
+                style: const TextStyle(color: AppTheme.alertRed),
+                textAlign: TextAlign.center,
               ),
-            ),
-          ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppTheme.alertRed,
-              foregroundColor: Colors.white,
-            ),
-            onPressed: _submitting ? null : _solicitarAuxilio,
-            icon: _submitting
-                ? const SizedBox(
-                    height: 18,
-                    width: 18,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: Colors.white,
-                    ),
-                  )
-                : const Icon(Icons.warning_amber_rounded),
-            label: Text(_submitting ? 'Enviando…' : '🚨 Solicitar auxilio'),
+              TextButton.icon(
+                onPressed: _locating ? null : _iniciarGps,
+                icon: const Icon(Icons.refresh),
+                label: const Text('Reintentar ubicación'),
+              ),
+            ],
           ),
-        ],
-      );
+        ),
+      AppGradientButton(
+        onPressed: _gpsActive && !_submitting ? _solicitarAuxilio : null,
+        height: 52,
+        useGradient: false,
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            if (_submitting)
+              const SizedBox(
+                height: 18,
+                width: 18,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.white,
+                ),
+              )
+            else
+              const Icon(Icons.warning_amber_rounded),
+            const SizedBox(width: 9),
+            Text(_submitting ? 'Enviando…' : 'Solicitar auxilio'),
+          ],
+        ),
+      ),
+    ],
+  );
 
   Widget _tarjetaRespuesta() {
     final respuesta = _respuesta;
@@ -569,10 +578,7 @@ class _AuxilioScreenState extends State<AuxilioScreen> {
           children: <Widget>[
             Text(
               'Auxilio #${auxilio.idAuxilio} · ${auxilio.tipoFalla}',
-              style: const TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-              ),
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 12),
             LinearProgressIndicator(
@@ -590,8 +596,9 @@ class _AuxilioScreenState extends State<AuxilioScreen> {
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 11,
-                      fontWeight:
-                          i <= index ? FontWeight.bold : FontWeight.normal,
+                      fontWeight: i <= index
+                          ? FontWeight.bold
+                          : FontWeight.normal,
                       color: i <= index ? Colors.orange.shade900 : null,
                     ),
                   ),

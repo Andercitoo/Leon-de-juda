@@ -12,8 +12,7 @@ const normalizarModalidad = (valor) => {
 };
 
 const crearPedido = async (req, res) => {
-  // El usuario se toma del token JWT (authMiddleware); el body es solo respaldo
-  const id_usuario = req.user?.id_usuario || req.body.id_usuario;
+  const id_usuario = req.user.id_usuario;
   const { repuestos, modalidad_entrega } = req.body;
 
   if (!Array.isArray(repuestos) || repuestos.length === 0) {
@@ -38,7 +37,7 @@ const crearPedido = async (req, res) => {
   }
 
   try {
-    const { nuevoPedido, subtotal, detalles } = await PedidoModel.crearPedidoConBloqueo({
+    const { nuevoPedido, subtotal, detalles, nombreCliente } = await PedidoModel.crearPedidoConBloqueo({
       id_usuario,
       modalidad_entrega: modalidad,
       costoEnvioDomicilio: COSTO_ENVIO,
@@ -51,7 +50,12 @@ const crearPedido = async (req, res) => {
       modalidad_aplicada: nuevoPedido.modalidad_entrega,
       subtotal,
       detalles,
-      pedido: nuevoPedido,
+      pedido: {
+        ...nuevoPedido,
+        nombre_cliente: nombreCliente,
+        subtotal,
+        detalles,
+      },
     });
   } catch (err) {
     if (err && err.status) {
@@ -62,4 +66,39 @@ const crearPedido = async (req, res) => {
   }
 };
 
-module.exports = { crearPedido };
+const listarPedidos = async (req, res) => {
+  try {
+    const pedidos = await PedidoModel.listarPedidosPorUsuario(req.user.id_usuario);
+    return res.json(pedidos);
+  } catch (err) {
+    console.error('Error en listarPedidos:', err);
+    return res.status(500).json({ error: 'Error al cargar los pedidos.' });
+  }
+};
+
+const cambiarEstadoPedido = async (req, res) => {
+  const id_pedido = Number.parseInt(req.params.id, 10);
+  const estadosPorAccion = { pagar: 'Pagado', cancelar: 'Cancelado' };
+  const estado = estadosPorAccion[req.params.accion];
+  if (!Number.isInteger(id_pedido) || id_pedido < 1) {
+    return res.status(400).json({ error: 'El código de pedido no es válido.' });
+  }
+  if (!estado) {
+    return res.status(400).json({ error: 'La acción debe ser pagar o cancelar.' });
+  }
+
+  try {
+    const pedido = await PedidoModel.actualizarEstadoPedido({
+      id_pedido,
+      id_usuario: req.user.id_usuario,
+      estado,
+    });
+    return res.json({ pedido });
+  } catch (err) {
+    if (err?.status) return res.status(err.status).json({ error: err.message });
+    console.error('Error en cambiarEstadoPedido:', err);
+    return res.status(500).json({ error: 'Error al actualizar el pedido.' });
+  }
+};
+
+module.exports = { crearPedido, listarPedidos, cambiarEstadoPedido };
