@@ -1,0 +1,30 @@
+Catalog photographs from Wikimedia Commons:
+
+- brake_pads.jpg: Braker1234, "Aisobrake1.jpg", CC BY-SA 4.0
+  https://commons.wikimedia.org/wiki/File:Aisobrake1.jpg
+  https://creativecommons.org/licenses/by-sa/4.0/
+- clutch_discs.jpg: Gérard Delafond, "Clutch discs.jpg", CC BY-SA 3.0
+  https://commons.wikimedia.org/wiki/File:Clutch_discs.jpg
+  https://creativecommons.org/licenses/by-sa/3.0/
+- motor_engine.jpg: ShriniwasGajare, "A Bajaj motorcycle engine featuring DTS-i technology.jpg", CC BY-SA 4.0
+  https://commons.wikimedia.org/wiki/File:A_Bajaj_motorcycle_engine_featuring_DTS-i_technology.jpg
+  https://creativecommons.org/licenses/by-sa/4.0/
+- air_filter.jpg: André Banyai, "AZ Motorcycle (2443335863).jpg", CC BY 2.0
+  https://commons.wikimedia.org/wiki/File:AZ_Motorcycle_(2443335863).jpg
+  https://creativecommons.org/licenses/by/2.0/
+- headlight.jpg: Wikisympathisant, "BMW R32 headlight Bosch 2023-02-23.jpg", CC BY-SA 4.0
+  https://commons.wikimedia.org/wiki/File:BMW_R32_headlight_Bosch_2023-02-23.jpg
+  https://creativecommons.org/licenses/by-sa/4.0/
+- battery.jpg: 92GTA, "996R FIAMM battery.jpg", CC BY-SA 4.0
+  https://commons.wikimedia.org/wiki/File:996R_FIAMM_battery.jpg
+  https://creativecommons.org/licenses/by-sa/4.0/
+- tire.jpg: Nimue Media, "Close-up Voorband IJsspeedwaymotor.jpg", CC BY-SA 3.0
+  https://commons.wikimedia.org/wiki/File:Close-up_Voorband_IJsspeedwaymotor.jpg
+  https://creativecommons.org/licenses/by-sa/3.0/
+- transmission_chain.jpg: UnknownNet Photography, "Day 46 - CY365 - Geared Up", CC BY-SA 2.0
+  https://www.flickr.com/photos/110548908@N06/12541129093
+  https://creativecommons.org/licenses/by-sa/2.0/
+
+The images are resized thumbnails. Product photographs are illustrative and
+may not depict the exact brand or model in inventory. Resized versions follow
+their source licenses, including the same-license requirement for CC BY-SA.
